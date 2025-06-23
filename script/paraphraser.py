@@ -2,7 +2,7 @@ import argparse
 from utils.model_loader import load_model_and_config
 from evaluation.tools.text_editor import TaideParaphraser
 from translate import Translator
-from evaluation.dataset import C4Dataset, ZHTWC4Dataset
+from evaluation.dataset import C4Dataset, ZHTWC4Dataset, HumanEvalDataset, MBPPDataset
 from watermark.auto_watermark import AutoWatermark
 from utils.transformers_config import TransformersConfig
 from evaluation.tools.success_rate_calculator import DynamicThresholdSuccessRateCalculator, FundamentalSuccessRateCalculator
@@ -28,9 +28,9 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 def get_transformes_config():
     # Transformers config
-    model_name = 'facebook/opt-1.3b'
+    # model_name = 'facebook/opt-1.3b'
     # model_name = 'meta-llama/Llama-3.1-8B'
-    # model_name = 'meta-llama/Llama-3.1-8B-Instruct'
+    model_name = 'meta-llama/Llama-3.1-8B-Instruct'
     # model_name = 'taide/Llama3-TAIDE-LX-8B-Chat-Alpha1'
     print(f"使用模型: {model_name}")
 
@@ -172,7 +172,7 @@ def assess_robustness_1(algorithm_name, attack_name, max_samples, output_dir, wa
     calculator = FundamentalSuccessRateCalculator(labels=['TPR', 'TNR', 'FPR', 'FNR', 'P', 'R', 'F1', 'ACC'])
     print(calculator.calculate(pipline1.evaluate(my_watermark), pipline2.evaluate(my_watermark)))
 
-def assess_detection(algorithm_name: str, max_samples: int, output_dir: str, watermarked_texts_path: str, dataset_path: str, delta: float, generation_mode: str):
+def assess_detection(algorithm_name: str, max_samples: int, output_dir: str, watermarked_texts_path: str, dataset_path: str, delta: float, generation_mode: str, temperature: float):
     # 加載模型和配置
     model, tokenizer, transformers_config = get_transformes_config()
     
@@ -183,16 +183,31 @@ def assess_detection(algorithm_name: str, max_samples: int, output_dir: str, wat
     elif 'c4' in dataset_path.lower():
         print(f"使用 C4Dataset 加載 {dataset_path}")
         dataset = C4Dataset(dataset_path, max_samples=max_samples)
-    
+    elif 'human_eval' in dataset_path.lower():
+        print(f"使用 HumanEvalDataset 加載 {dataset_path}")
+        dataset = HumanEvalDataset(dataset_path, max_samples=max_samples)
+    elif 'mbpp' in dataset_path.lower():
+        print(f"使用 MBPPDataset 加載 {dataset_path}")
+        dataset = MBPPDataset(dataset_path, max_samples=max_samples)
+
     print(f"初始化 {algorithm_name} 水印...")
-    print(f"delta: {args.delta}")
-    watermark = AutoWatermark.load(
-        algorithm_name,
-        algorithm_config=f'config/{algorithm_name}.json',
-        transformers_config=transformers_config,
-        delta=args.delta
-    )
-    print(f"{algorithm_name} 水印初始化完成，實際 delta={watermark.config.delta}")
+    if algorithm_name == 'EXP':
+        watermark = AutoWatermark.load(
+            algorithm_name,
+            algorithm_config=f'config/{algorithm_name}.json',
+            transformers_config=transformers_config,
+            temperature=temperature
+        )
+        print(f"temperature: {watermark.config.temperature}")
+    else:
+        watermark = AutoWatermark.load(
+            algorithm_name,
+            algorithm_config=f'config/{algorithm_name}.json',
+            transformers_config=transformers_config,
+            delta=args.delta
+        )
+        print(f"delta: {watermark.config.delta}")
+    print(f"{algorithm_name} 水印初始化完成")
     
     # 初始化兩個 pipeline
     wm_pipeline = WatermarkedTextDetectionPipeline_V2(
@@ -516,29 +531,30 @@ def assess_signature_robustness(algorithm_name: str, attack_name: str, max_sampl
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--algorithm', type=str, default='Unigram')
+    parser.add_argument('--algorithm', type=str, default='KGW')
     parser.add_argument('--attack', type=str, default='Word-D')
-    parser.add_argument('--dataset', type=str, default='dataset/c4/processed_c4.json',
+    parser.add_argument('--dataset', type=str, default='dataset/mbpp/mbpp.jsonl',
                         help='數據集路徑')
-    parser.add_argument('--max_samples', type=int, default=100)
-    parser.add_argument('--output_dir', type=str, default='meeting')
-    parser.add_argument('--watermarked_texts_path', type=str, default='texts1000/llama3.1/unigram/enc4_d2/watermarked_texts.json')
-    parser.add_argument('--delta', type=float, default=2.0)
-    parser.add_argument('--generation_mode', type=str, default='load')
+    parser.add_argument('--max_samples', type=int, default=1)
+    parser.add_argument('--output_dir', type=str, default='tables_data_1000/llama3.1/kgw/mbpp_d1')
+    parser.add_argument('--watermarked_texts_path', type=str, default='texts1000/llama3.1/kgw/mbpp_d1/watermarked_texts.json')
+    parser.add_argument('--delta', type=float, default=1.0)
+    parser.add_argument('--generation_mode', type=str, default='generation')
     parser.add_argument('--n', type=int, default=2, help='N-gram value for signature config')
+    parser.add_argument('--temperature', type=float, default=1.0, help='Temperature for generation')
     args = parser.parse_args()
 
     # assess_robustness(args.algorithm, args.attack)
     # assess_robustness_1(args.algorithm, args.attack, args.max_samples, args.output_dir, args.watermarked_texts_path)
     # test_taide_paraphraser()
     # 沒有 signature 的偵測
-    # assess_detection(args.algorithm, args.max_samples, args.output_dir, args.watermarked_texts_path, args.dataset, args.delta, args.generation_mode)
+    assess_detection(args.algorithm, args.max_samples, args.output_dir, args.watermarked_texts_path, args.dataset, args.delta, args.generation_mode, args.temperature)
     
     # 沒有 signature, 有 attack 的偵測 
     # assess_robustness_v2(args.algorithm, args.attack, args.max_samples, args.output_dir, args.watermarked_texts_path, args.dataset, args.delta, args.generation_mode)
     
     # 有 signature 的偵測
-    assess_signature_detection(args.algorithm, args.max_samples, args.output_dir, args.watermarked_texts_path, args.dataset, args.delta, args.generation_mode, args.n)
+    # assess_signature_detection(args.algorithm, args.max_samples, args.output_dir, args.watermarked_texts_path, args.dataset, args.delta, args.generation_mode, args.n)
 
     # 有 signature, 有 attack 的偵測
     # assess_signature_robustness(args.algorithm, args.attack, args.max_samples, args.output_dir, args.watermarked_texts_path, args.dataset, args.delta, args.generation_mode, args.n)

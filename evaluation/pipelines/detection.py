@@ -32,10 +32,12 @@ from watermark.ewd.ewd import EWD
 from watermark.kgw.kgw import KGW
 from watermark.sweet.sweet import SWEET
 from watermark.unigram.unigram import Unigram
+from watermark.exp.exp import EXP
 from evaluation.tools.success_rate_calculator import FundamentalSuccessRateCalculator
 import torch
 from watermark.signature.signature import SignatureSetCollector, KGWSignature, SweetSignature, UnigramSignature
 from watermark.signature.ngram import KGWNGramSignature, SweetNGramSignature, UnigramNGramSignature
+from math import log
 
 class DetectionPipelineReturnType(Enum):
     """Return type of the watermark detection pipeline."""
@@ -345,6 +347,36 @@ class WatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
         device = self.watermark.config.device
         
         encoded_text = tokenizer(text, return_tensors="pt", add_special_tokens=False)["input_ids"][0].to(device)
+
+        if isinstance(self.watermark, EXP):
+            # 將 encoded_text 轉換為 numpy array，與 EXP detect_watermark 方法保持一致
+            encoded_array = encoded_text.cpu().numpy()
+            
+            exp_scores = []
+            
+            for i in range(len(encoded_array)):
+                if i < self.watermark.config.prefix_length:
+                    exp_scores.append("prefix")
+                    continue
+                # Seed RNG with the prefix of the encoded text
+                self.watermark.utils.seed_rng(encoded_array[:i])
+                
+                # Generate random numbers for each token in the vocabulary
+                random_numbers = torch.rand(self.watermark.config.vocab_size, generator=self.watermark.utils.rng)
+                
+                # Calculate score for the current token
+                r = random_numbers[encoded_array[i]]
+                score = log(1 / (1 - r))
+                exp_scores.append(score)
+            
+            entropy_list = self._calculate_entropy(encoded_text)
+            
+            return [
+                (token_id.item(), 
+                 exp_scores[i],
+                 entropy_list[i])
+                for i, token_id in enumerate(encoded_text)
+            ]
         
         if isinstance(self.watermark, (SWEET, EWD)):
             entropy_list = self.watermark.utils.calculate_entropy(
@@ -456,7 +488,8 @@ class WatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
         elif self.return_type == DetectionPipelineReturnType.SCORES:
             return [result.detect_result['score'] for result in evaluation_results]
         else:  # DetectionPipelineReturnType.IS_WATERMARKED
-            return [result.detect_result['is_watermarked'] for result in evaluation_results]
+            # return [result.detect_result['is_watermarked'] for result in evaluation_results]
+            return [bool(result.detect_result['is_watermarked']) for result in evaluation_results]
 
 
 class UnwatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
@@ -497,6 +530,36 @@ class UnwatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
         device = self.watermark.config.device
         
         encoded_text = tokenizer(text, return_tensors="pt", add_special_tokens=False)["input_ids"][0].to(device)
+
+        if isinstance(self.watermark, EXP):
+            # 將 encoded_text 轉換為 numpy array，與 EXP detect_watermark 方法保持一致
+            encoded_array = encoded_text.cpu().numpy()
+            
+            exp_scores = []
+            
+            for i in range(len(encoded_array)):
+                if i < self.watermark.config.prefix_length:
+                    exp_scores.append("prefix")
+                    continue
+                # Seed RNG with the prefix of the encoded text
+                self.watermark.utils.seed_rng(encoded_array[:i])
+                
+                # Generate random numbers for each token in the vocabulary
+                random_numbers = torch.rand(self.watermark.config.vocab_size, generator=self.watermark.utils.rng)
+                
+                # Calculate score for the current token
+                r = random_numbers[encoded_array[i]]
+                score = log(1 / (1 - r))
+                exp_scores.append(score)
+            
+            entropy_list = self._calculate_entropy(encoded_text)
+            
+            return [
+                (token_id.item(), 
+                 exp_scores[i],
+                 entropy_list[i])
+                for i, token_id in enumerate(encoded_text)
+            ]
         
         if isinstance(self.watermark, (SWEET, EWD)):
             entropy_list = self.watermark.utils.calculate_entropy(
@@ -610,7 +673,8 @@ class UnwatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
         elif self.return_type == DetectionPipelineReturnType.SCORES:
             return [result.detect_result['score'] for result in evaluation_results]
         else:  # DetectionPipelineReturnType.IS_WATERMARKED
-            return [result.detect_result['is_watermarked'] for result in evaluation_results]
+            # return [result.detect_result['is_watermarked'] for result in evaluation_results]
+            return [bool(result.detect_result['is_watermarked']) for result in evaluation_results]
         
 
 class SignatureAwareWatermarkDetectionPipeline_V2(WatermarkedTextDetectionPipeline_V2):
