@@ -91,8 +91,9 @@ def move_watermarked_texts() -> None:
     max_samples = 5000
     
     datasets = [
-        ("enc4", "enc4")  # (dataset_name, dataset_name)
+        # ("enc4", "enc4")  # (dataset_name, dataset_name)
         # 如果有其他 dataset 可以在這裡添加
+        ("mbpp", "mbpp")
     ]
     
     deltas = [2, 1, 0.8, 0.5, 0.1]
@@ -120,10 +121,79 @@ def move_watermarked_texts() -> None:
                 else:
                     print(f"來源文件不存在: {source_path}")
 
+def code_generation():
+    # model = "llama3.1"
+    # algorithms = ["KGW", "SWEET", "Unigram"]
+    # max_samples = 1000
+    # model = 'opt1.3b'
+    model = 'llama3.1'
+    algorithms = ["EXP"]
+    max_samples = 1
+    
+    datasets = [
+        # ("dataset/human_eval/test.jsonl", "he")
+        # ("dataset/mbpp/mbpp.jsonl", "mbpp")
+        ('dataset/c4/processed_c4.json', 'enc4')
+    ]
+    
+    deltas = [1, 0.8, 0.5]
+
+    
+    for dataset_path, dataset_name in datasets:
+        for algorithm in algorithms:
+            for delta in deltas:
+                algorithm_lower = algorithm.lower()
+                output_dir = f"tables_data_{max_samples}/{model}/{algorithm_lower}/{dataset_name}_d{delta}"
+                watermarked_texts_path = f"{output_dir}/watermarked_texts.json"
+                
+                cmd = (f"python3 script/paraphraser.py "
+                        f"--algorithm {algorithm} "
+                        f"--max_samples {max_samples} "
+                        f"--output_dir {output_dir} "
+                        f"--watermarked_texts_path {watermarked_texts_path} "
+                        f"--dataset {dataset_path} "
+                        f"--generation_mode=generate "
+                        f"--delta={delta} ")
+                
+                output_file = f"{output_dir}/res.txt"
+                run_command(cmd, output_file)
+
+def exp_generate():
+    model = 'llama3.1'
+    algorithms = ["EXP"]
+    max_samples = 1000
+    
+    datasets = [
+        ('dataset/c4/processed_c4.json', 'enc4')
+    ]   
+
+    temperatures = [0.3]
+
+    for dataset_path, dataset_name in datasets:
+        for algorithm in algorithms:
+            for temperature in temperatures:
+                algorithm_lower = algorithm.lower()
+                output_dir = f"tables_data_{max_samples}/{model}/{algorithm_lower}/{dataset_name}_t{temperature}"
+                watermarked_texts_path = f"{output_dir}/watermarked_texts.json"
+                
+                cmd = (f"python3 script/paraphraser.py "
+                    f"--algorithm {algorithm} "
+                    f"--max_samples {max_samples} "
+                    f"--output_dir {output_dir} "
+                    f"--watermarked_texts_path {watermarked_texts_path} "
+                    f"--dataset {dataset_path} "
+                    f"--generation_mode=generate "
+                    f"--temperature={temperature}")
+                
+                output_file = f"{output_dir}/res.txt"
+                run_command(cmd, output_file)
+
 def main():
     # generate()
     # detect()
-    move_watermarked_texts()
+    # move_watermarked_texts()
+    # code_generation()
+    exp_generate()
 
 if __name__ == "__main__":
     main() 
