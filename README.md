@@ -103,3 +103,62 @@ python3 script/run_paraphraser_batch.py
 <!-- ## License -->
 
 <!-- License information -->
+
+
+## Web Interface (Gradio)
+
+### Overview
+
+This project includes a user-friendly web interface built with Gradio that provides an interactive way to run watermark experiments without command-line operations.
+
+### Launch Gradio Interface
+
+Start the web interface:
+
+```bash
+python gradio_app.py
+```
+
+The interface will be available at `http://localhost:7860`
+
+### Features
+
+**Experiment Configuration:**
+- Select watermarking algorithms (KGW, SWEET, Unigram, EXP)
+- Choose models (Llama-3.1, OPT-1.3b, TAIDE)
+- Configure datasets (C4, ZHTW, HumanEval, MBPP)
+- Adjust parameters (delta, temperature, sample count)
+
+**Advanced Options:**
+- WinMax detection mode for enhanced accuracy
+- Attack simulation (Word deletion, substitution, scrambling)
+- Dynamic path generation based on experiment parameters
+
+**Real-time Monitoring:**
+- Live GPU usage monitoring
+- Experiment progress tracking
+- Automatic result saving to structured directories
+
+**Convenience Features:**
+- Auto-generated Python commands for terminal execution
+- Dynamic output directory creation
+- Watermarked text path management
+- Copy-paste ready command generation
+
+### Basic Usage
+
+1. **Select Experiment Type**: Choose between basic detection or robustness testing
+2. **Configure Parameters**: Set algorithm, model, and dataset preferences
+3. **Adjust Settings**: Modify watermark strength and sample size
+4. **Execute**: Click "Execute Experiment" to run the configuration
+5. **Monitor Results**: View real-time output and GPU usage
+6. **Export**: Copy generated commands for batch processing
+
+### Output Management
+
+The interface automatically organizes results using structured paths:
+- Output directories: `tables_data_{samples}/{model}/{algorithm}/{dataset}_{params}/`
+- Watermark texts: `texts1000/{model}/{algorithm}/{dataset}_{params}/watermarked_texts.json`
+- Results saved to: `{output_dir}/res.txt`
+
+This web interface complements the command-line tools and provides an accessible entry point for researchers and practitioners working with LLM watermark detection.
