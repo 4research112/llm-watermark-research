@@ -265,9 +265,16 @@ class SWEET(BaseWatermark):
         # Encode the text
         encoded_text = self.config.generation_tokenizer(text, return_tensors="pt", add_special_tokens=False)["input_ids"][0].to(self.config.device)
 
-        # Compute token flags
-        _, token_flags = self.utils.score_sequence(encoded_text)
+        # Calculate entropy
+        entropy_list = self.utils.calculate_entropy(self.config.generation_model, encoded_text)
 
+        # Compute token flags
+        _, token_flags, weights = self.utils.score_sequence(encoded_text, entropy_list)
+
+        token_flags = [
+            -1 if flag == -1 else (1 if flag == 1 and weight == 1 else 0) 
+            for flag, weight in zip(token_flags, weights)
+        ]
         return token_flags
 
 
