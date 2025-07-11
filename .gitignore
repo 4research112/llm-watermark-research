@@ -1,3 +1,6 @@
+tables_data_*
+texts*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

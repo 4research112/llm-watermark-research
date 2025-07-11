@@ -19,6 +19,7 @@
 
 import json
 import os
+import warnings
 from tqdm import tqdm
 from enum import Enum, auto
 from utils.timer import timer
@@ -38,6 +39,7 @@ import torch
 from watermark.signature.signature import SignatureSetCollector, KGWSignature, SweetSignature, UnigramSignature
 from watermark.signature.ngram import KGWNGramSignature, SweetNGramSignature, UnigramNGramSignature
 from math import log
+from evaluation.tools.text_editor import CopyPasteAttack, PercentageCopyPasteAttack
 
 class DetectionPipelineReturnType(Enum):
     """Return type of the watermark detection pipeline."""
@@ -68,7 +70,8 @@ class WatermarkDetectionPipeline:
     """Pipeline for watermark detection."""
 
     def __init__(self, dataset: BaseDataset, text_editor_list: list[TextEditor] = [], 
-                 show_progress: bool = True, return_type: DetectionPipelineReturnType = DetectionPipelineReturnType.SCORES) -> None:
+                 show_progress: bool = True, return_type: DetectionPipelineReturnType = DetectionPipelineReturnType.SCORES,
+                 use_winmax: bool = False) -> None:
         """
             Initialize the watermark detection pipeline.
 
@@ -82,11 +85,15 @@ class WatermarkDetectionPipeline:
         self.text_editor_list = text_editor_list
         self.show_progress = show_progress
         self.return_type = return_type
+        self.use_winmax = use_winmax
        
-    def _edit_text(self, text: str, prompt: str = None):
+    def _edit_text(self, text: str, prompt: str = None, unwatermarked_text: str = None):
         """Edit text using text editors."""
         for text_editor in self.text_editor_list:
-            text = text_editor.edit(text, prompt)
+            if isinstance(text_editor, (CopyPasteAttack, PercentageCopyPasteAttack)):
+                text = text_editor.edit(text, unwatermarked_text)
+            else:
+                text = text_editor.edit(text, prompt)
         return text
     
     def _generate_or_retrieve_text(self, dataset_index: int, watermark: BaseWatermark):
@@ -95,7 +102,12 @@ class WatermarkDetectionPipeline:
 
     def _detect_watermark(self, text: str, watermark: BaseWatermark):
         """Detect watermark in text."""
-        detect_result = watermark.detect_watermark(text, return_dict=True)
+        if self.use_winmax and hasattr(watermark, 'detect_watermark_win_max'):
+            detect_result = watermark.detect_watermark_win_max(text, min_L=1, max_L=200, window_interval=1)
+        elif self.use_winmax:
+            raise ValueError(f"'win_max' not supported for watermark type: {type(watermark).__name__}.")
+        else:
+            detect_result = watermark.detect_watermark(text, return_dict=True)
         return detect_result
 
     def _get_iterable(self):
@@ -268,9 +280,10 @@ class WatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
         return_type: DetectionPipelineReturnType = DetectionPipelineReturnType.SCORES,
         extract_colors: bool = False,
         watermarked_texts_path: Optional[str] = None,
-        generation_mode: str = 'load'  # 'load' 或 'generate'
+        generation_mode: str = 'load',  # 'load' 或 'generate'
+        use_winmax: bool = False
     ) -> None:
-        super().__init__(dataset, text_editor_list, show_progress, return_type)
+        super().__init__(dataset, text_editor_list, show_progress, return_type, use_winmax)
         self.watermark = watermark
         self.output_dir = output_dir
         self.extract_colors = extract_colors
@@ -455,7 +468,8 @@ class WatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
                     
                 # 編輯文本
                 prompt = self.dataset.get_prompt(index)
-                edited_text = self._edit_text(text, prompt)
+                unwatermarked_text = self.dataset.get_natural_text(index)
+                edited_text = self._edit_text(text, prompt, unwatermarked_text=unwatermarked_text)
                 
                 # 檢測水印
                 detect_result = self._detect_watermark(edited_text, self.watermark)
@@ -504,13 +518,14 @@ class UnwatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
         show_progress: bool = True,
         return_type: DetectionPipelineReturnType = DetectionPipelineReturnType.SCORES,
         extract_colors: bool = False,
-        text_source_mode: str = 'natural'  # 'natural' 或 'generated'
+        text_source_mode: str = 'natural',  # 'natural' 或 'generated'
+        use_winmax: bool = False
     ) -> None:
         # 驗證 text_source_mode
         if text_source_mode not in ['natural', 'generated']:
             raise InvalidTextSourceModeError(text_source_mode)
             
-        super().__init__(dataset, text_editor_list, show_progress, return_type)
+        super().__init__(dataset, text_editor_list, show_progress, return_type, use_winmax)
         self.watermark = watermark
         self.output_dir = output_dir
         self.extract_colors = extract_colors
@@ -692,6 +707,7 @@ class SignatureAwareWatermarkDetectionPipeline_V2(WatermarkedTextDetectionPipeli
         watermarked_texts_path: Optional[str] = None,
         generation_mode: str = 'load',  # 'load' 或 'generate'
         signature_config: Optional[Dict] = None,
+        custom_ngram_signature_set_path: Optional[str] = None,
     ) -> None:
         """
         初始化簽名感知的水印檢測管道。
@@ -709,6 +725,7 @@ class SignatureAwareWatermarkDetectionPipeline_V2(WatermarkedTextDetectionPipeli
             signature_config: 簽名配置，包含：
                 - use_ngram: 是否使用 n-gram
                 - n: n-gram 的 n 值（如果使用 n-gram）
+            custom_ngram_signature_set_path: n-gram 簽名集路徑
         """
         super().__init__(
             dataset=dataset,
@@ -726,6 +743,7 @@ class SignatureAwareWatermarkDetectionPipeline_V2(WatermarkedTextDetectionPipeli
         self.signature_collector = None
         self.ngram_collector = None
         self.signature_detector = None
+        self.custom_ngram_signature_set_path = custom_ngram_signature_set_path
         
         # 設置簽名相關路徑
         self.signature_file = os.path.join(output_dir, "signature_set.json")
@@ -744,15 +762,21 @@ class SignatureAwareWatermarkDetectionPipeline_V2(WatermarkedTextDetectionPipeli
         
         # 如果啟用 n-gram，收集 n-gram 簽名
         if self.signature_config.get('use_ngram'):
-            from watermark.signature.ngram import NGramSignatureSetCollector
             n = self.signature_config['n']
-            self.ngram_collector = NGramSignatureSetCollector(self.watermark, n=n)
-            
-            logging.info(f"收集 {n}-gram 簽名集...")
-            print(f"收集 {n}-gram 簽名集...")
-            for text in texts:
-                self.ngram_collector.collect_from_text(text)
-            self.ngram_collector.save_ngram_signature_set(self.ngram_signature_file)
+            if self.custom_ngram_signature_set_path and os.path.exists(self.custom_ngram_signature_set_path):
+                from watermark.signature.ngram import NGramSignatureSetUtils
+                _, loaded_ngram_set = NGramSignatureSetUtils.load(self.custom_ngram_signature_set_path)
+                self.ngram_collector = NGramSignatureSetCollector(self.watermark, n=n, ngram_signature_set=loaded_ngram_set)
+            else:
+                from watermark.signature.ngram import NGramSignatureSetCollector
+                n = self.signature_config['n']
+                self.ngram_collector = NGramSignatureSetCollector(self.watermark, n=n)
+                
+                logging.info(f"收集 {n}-gram 簽名集...")
+                print(f"收集 {n}-gram 簽名集...")
+                for text in texts:
+                    self.ngram_collector.collect_from_text(text)
+                self.ngram_collector.save_ngram_signature_set(self.ngram_signature_file)
         
         # 創建簽名檢測器
         self._create_signature_detector()
@@ -902,6 +926,7 @@ class SignatureAwareUnwatermarkedTextDetectionPipeline_V2(UnwatermarkedTextDetec
         extract_colors: bool = False,
         text_source_mode: str = 'natural',  # 'natural' 或 'generated'
         signature_config: Optional[Dict] = None,
+        custom_ngram_signature_set_path: Optional[str] = None,
     ) -> None:
         """
         初始化簽名感知的非水印文本檢測管道。
@@ -918,6 +943,7 @@ class SignatureAwareUnwatermarkedTextDetectionPipeline_V2(UnwatermarkedTextDetec
             signature_config: 簽名配置，包含：
                 - use_ngram: 是否使用 n-gram
                 - n: n-gram 的 n 值（如果使用 n-gram）
+            custom_ngram_signature_set_path: n-gram 簽名集路徑
         """
         # 驗證 text_source_mode
         if text_source_mode not in ['natural', 'generated']:
@@ -936,6 +962,7 @@ class SignatureAwareUnwatermarkedTextDetectionPipeline_V2(UnwatermarkedTextDetec
         
         self.signature_config = signature_config or {}
         self.signature_detector = None
+        self.custom_ngram_signature_set_path = custom_ngram_signature_set_path
         
         # 設置簽名相關路徑 - 使用與 SignatureAwareWatermarkDetectionPipeline_V2 相同的路徑
         self.signature_file = os.path.join(output_dir, "signature_set.json")
@@ -960,9 +987,21 @@ class SignatureAwareUnwatermarkedTextDetectionPipeline_V2(UnwatermarkedTextDetec
         if not self.signature_config.get('use_ngram'):
             return set()
         
+        if self.custom_ngram_signature_set_path and os.path.exists(self.custom_ngram_signature_set_path):
+            ngram_file_to_load = self.custom_ngram_signature_set_path
+            print(f"使用自訂 n-gram 簽名集: {ngram_file_to_load}")
+        elif os.path.exists(self.ngram_signature_file):
+            ngram_file_to_load = self.ngram_signature_file
+            logging.info(f"載入預設 n-gram 簽名集: {ngram_file_to_load}")
+            print(f"載入預設 n-gram 簽名集: {ngram_file_to_load}")
+        else:
+            logging.error(f"找不到 n-gram 簽名集文件")
+            print(f"找不到 n-gram 簽名集文件")
+            return set()
+        
         try:
             from watermark.signature.ngram import NGramSignatureSetUtils
-            loaded_n, loaded_ngram_set = NGramSignatureSetUtils.load(self.ngram_signature_file)
+            loaded_n, loaded_ngram_set = NGramSignatureSetUtils.load(ngram_file_to_load)
             
             # 確認加載的 n 與配置中的 n 一致
             configured_n = self.signature_config.get('n', 1)

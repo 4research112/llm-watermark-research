@@ -143,6 +143,13 @@ class HumanEvalDataset(BaseDataset):
                 prompt += '\"\"\"'
 
             self.prompts.append(prompt)
+            # 為了支持 UnwatermarkedTextDetectionPipeline_V2，我們可以將 canonical_solution 作為 natural_text
+            # 這代表「人類寫的程式碼」，可以作為非水印文本的參考
+            if 'canonical_solution' in item:
+                self.natural_texts.append(item['canonical_solution'])
+            else:
+                print(f"No canonical solution found for {prompt}")
+
             self.references.append({'task': prompt, 'test': item['test'], 'entry_point': item['entry_point']})
 
 class TraditionalChineseDataset(BaseDataset):
@@ -199,8 +206,62 @@ class ZHTWC4Dataset(BaseDataset):
             self.prompts.append(item['prompt'])
             self.natural_texts.append(item['natural_text'])
 
+class MBPPDataset(BaseDataset):
+    """Dataset class for MBPP (Mostly Basic Python Problems) dataset."""
+
+    def __init__(self, data_source: str, max_samples: int = 200) -> None:
+        """
+        Initialize the MBPP dataset.
+
+        Parameters:
+            data_source (str): The path to the MBPP dataset file.
+            max_samples (int): Maximum number of samples to load. Default is 200.
+        """
+        super().__init__(max_samples)
+        self.data_source = data_source
+        self.load_data()
+    
+    def load_data(self) -> None:
+        """Load data from the MBPP dataset file."""
+        with open(self.data_source, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        for line in lines[:self.max_samples]:
+            item = json.loads(line)
+            
+            # 程式問題描述作為 prompt
+            self.prompts.append(item['text'])
+            
+            # 程式碼解決方案作為 natural_text
+            # 處理 \r\n 換行符號，轉換為正常的 \n
+            code = item['code'].replace('\r\n', '\n').replace('\r', '\n')
+            self.natural_texts.append(code)
+            
+            # 可選：將測試資訊保存到 references 中，供後續評估使用
+            reference_data = {
+                'task_id': item['task_id'],
+                'text': item['text'],
+                'test_list': item['test_list'],
+                'test_setup_code': item['test_setup_code']
+            }
+            if 'challenge_test_list' in item:
+                reference_data['challenge_test_list'] = item['challenge_test_list']
+            
+            self.references.append(reference_data)
+
 if __name__ == '__main__':
     d1 = C4Dataset('dataset/c4/processed_c4.json', max_samples=100)
     d2 = WMT16DE_ENDataset('dataset/wmt16_de_en/validation.jsonl', max_samples=100)
-    d3 = HumanEvalDataset('dataset/HumanEval/test.jsonl', max_samples=100)
-    d4 = TraditionalChineseDataset('dataset/zhtw/TraditionalChinese.jsonl', max_samples=100)
+    d3 = HumanEvalDataset('dataset/human_eval/test.jsonl', max_samples=100)
+    d4 = MBPPDataset('dataset/mbpp/mbpp.jsonl', max_samples=1000)
+
+    # 獲取第一個問題
+    prompt = d4.get_prompt(30)  # "Write a function to find the minimum cost path..."
+    natural_text = d4.get_natural_text(30)  # "R = 3\nC = 3\ndef min_cost(cost, m, n):..."
+    reference = d4.get_reference(30)  # {'task_id': 1, 'text': '...', 'test_list': [...]}
+    print(d4.prompt_nums)
+    print(d4.natural_text_nums)
+    print(d4.reference_nums)
+    print(prompt)
+    print(natural_text)
+    print(reference)

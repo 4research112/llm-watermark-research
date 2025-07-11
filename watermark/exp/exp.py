@@ -156,6 +156,31 @@ class EXP(BaseWatermark):
         watermarked_text = self.config.generation_tokenizer.decode(watermarked_tokens, skip_special_tokens=True)
 
         return watermarked_text    
+    
+    def get_token_score(self, text: str):
+        """Get the token score for the text."""
+        encoded_text = self.config.generation_tokenizer.encode(text, return_tensors='pt', add_special_tokens=False)[0]
+
+        seq_len = len(encoded_text)
+        score = [0 for _ in range(seq_len)]
+
+        for i in range(self.config.prefix_length, seq_len):
+            # prev_tokens_sum = torch.sum(encoded_text[i - self.config.prefix_length:i], dim=-1)
+            # token = encoded_text[i]
+            # u = self.utils.uniform[prev_tokens_sum, token]
+            # score[i] = log(1 / (1 - u))
+            
+            # Seed RNG with the prefix of the encoded text
+            self.utils.seed_rng(encoded_text[:i])
+
+            # Generate random numbers for each token in the vocabulary
+            random_numbers = torch.rand(self.config.vocab_size, generator=self.utils.rng)
+
+            # Calculate score for the current token
+            r = random_numbers[encoded_text[i]]
+            score[i] = log(1 / (1 - r))
+        
+        return score
 
     def detect_watermark(self, text: str, return_dict: bool = True, *args, **kwargs) -> dict:
         """Detect watermark in the text."""
@@ -165,6 +190,7 @@ class EXP(BaseWatermark):
 
         # Calculate the number of tokens to score, excluding the prefix
         num_scored = len(encoded_text) - self.config.prefix_length
+        print(f"num_scored: {num_scored}")
         total_score = 0
 
         for i in range(self.config.prefix_length, len(encoded_text)):
@@ -178,6 +204,8 @@ class EXP(BaseWatermark):
             r = random_numbers[encoded_text[i]]
             total_score += log(1 / (1 - r))
 
+        print(f"total_score: {total_score}")
+
         # Calculate p_value
         p_value = scipy.stats.gamma.sf(total_score, num_scored, loc=0, scale=1)
 
@@ -189,6 +217,59 @@ class EXP(BaseWatermark):
             return {"is_watermarked": is_watermarked, "score": p_value}
         else:
             return (is_watermarked, p_value)
+        
+    def detect_watermark_win_max(self, text:str, return_dict: bool = True, min_L: int = 1, max_L=None, window_interval=1, *args, **kwargs):
+        """Detect watermarked segments in the text using WinMax algorithm."""
+        
+        # Get token score
+        token_scores = self.get_token_score(text)
+
+        if max_L is None:
+            max_L = len(token_scores) - self.config.prefix_length
+
+        min_p_value = float('inf')
+        flag_start_idx, flag_end_idx = -1, -1
+
+        # Traverse all possible segments
+        for L in range(min_L, max_L + 1, window_interval):
+            for start_idx in range(self.config.prefix_length, len(token_scores) - L + 1):
+                p_value = scipy.stats.gamma.sf(sum(token_scores[start_idx:start_idx + L]), L, loc=0, scale=1)
+                if p_value < min_p_value:
+                    min_p_value = p_value
+                    flag_start_idx, flag_end_idx = start_idx, start_idx + L
+
+        # Determine if the z_score indicates a watermark
+        is_watermarked = bool(min_p_value < self.config.threshold)
+
+        # Return results based on the return_dict flag
+        if return_dict:
+            if is_watermarked:
+                return {"is_watermarked": is_watermarked, "indices": [(flag_start_idx, flag_end_idx, min_p_value)]}
+            else:
+                return {"is_watermarked": is_watermarked, "indices": []}
+    
+    def detect_watermark_with_fix_window(self, text: str, L: int, threshold: float, return_dict: bool = True, *args, **kwargs) -> dict:
+        """Detect watermark in the text using fixed window algorithm."""
+        
+        # Get token score
+        token_scores = self.get_token_score(text)
+
+        is_watermarked = False
+
+        indices = []
+
+        # Traverse through the text and calculate the score for each window
+        for i in range(self.config.prefix_length, len(token_scores) - L + 1):
+            score = sum(token_scores[i:i + L])
+            score = scipy.stats.gamma.sf(score, L, loc=0, scale=1)
+            if score < threshold:
+                is_watermarked = True
+                indices.append((i, i + L, score))
+
+        if return_dict:
+            return {"is_watermarked": is_watermarked, "indices": indices}
+        else:
+            return (is_watermarked, indices)
         
     def get_data_for_visualization(self, text: str, *args, **kwargs) -> DataForVisualization:
         """Get data for visualization."""

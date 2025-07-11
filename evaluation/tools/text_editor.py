@@ -545,3 +545,214 @@ class BackTranslationTextEditor(TextEditor):
         intermediary_text = self.translate_to_intermediary(text)
         edit_result = self.translate_to_source(intermediary_text)
         return edit_result
+
+class ScrambleAttack(TextEditor):
+
+    def __init__(self, tokenizer=None, min_length: int = 0) -> None:
+        """
+        Initialize the scramble attack.
+
+        Parameters:
+            tokenizer: The tokenizer to use for the attack.
+            min_length: The minimum length of the text to attack.
+        """
+        super().__init__()
+        self.tokenizer = tokenizer
+        self.min_length = min_length
+
+    def edit(self, text: str, reference=None):
+        """Scramble the text."""
+
+        # Check if the text length meets the attack condition
+        if self.tokenizer and self.min_length > 0:
+            token_length = len(self.tokenizer(text)["input_ids"])
+            if token_length < self.min_length:
+                return ""
+        
+        # Split the text by periods and shuffle the sentences
+        sentences = text.split(".")
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
+        if len(sentences) <= 1:
+            return text
+        
+        # Shuffle the sentences randomly
+        random.shuffle(sentences)
+        
+        # Reassemble the text
+        scrambled_text = ". ".join(sentences)
+        if not scrambled_text.endswith("."):
+            scrambled_text += "."
+            
+        return scrambled_text
+
+class CopyPasteAttack(TextEditor):
+    """Copy-Paste attack: copy and paste a part of the reference text into the target text."""
+
+    def __init__(self, tokenizer, 
+                 num_insertions: int = 3, 
+                 insertion_length: int = 20,
+                 min_length: int = 0,
+                 attack_type: str = "k-t") -> None:
+        """
+        Initialize the copy-paste attack.
+
+        Parameters:
+            tokenizer: The tokenizer to use for the attack.
+            num_insertions (int): The number of insertions (k).
+            insertion_length (int): The length of each insertion (t).
+            min_length (int): The minimum length of the text to attack.
+            attack_type (str): The attack type, supports "single-single", "triple-single", "k-t".
+        """
+        super().__init__()
+        self.tokenizer = tokenizer
+        self.num_insertions = num_insertions
+        self.insertion_length = insertion_length
+        self.min_length = min_length
+        self.attack_type = attack_type
+
+    def _tokenize_text(self, text: str):
+        """Convert the text to token IDs."""
+        return self.tokenizer(text, return_tensors="pt", add_special_tokens=False)["input_ids"][0]
+
+    def _single_insertion(self, insertion_len: int, min_token_count: int, 
+                         dst_tokens, src_tokens):
+        """Execute single insertion attack."""
+        # Ensure the insertion length does not exceed the available length
+        actual_insertion_len = min(insertion_len, min_token_count - 1)
+        
+        # Randomly select the insertion position
+        insertion_pos = random.randint(1, len(dst_tokens) - actual_insertion_len)
+        
+        # Randomly select the starting position of the source text
+        src_start = random.randint(0, len(src_tokens) - actual_insertion_len)
+        
+        # Execute insertion: dst前部 + src片段 + dst後部
+        result = torch.cat([
+            dst_tokens[:insertion_pos],
+            src_tokens[src_start:src_start + actual_insertion_len],
+            dst_tokens[insertion_pos + actual_insertion_len:]
+        ])
+        
+        return result
+
+    def _k_insertion_t_len(self, k: int, t: int, min_token_count: int,
+                          dst_tokens, src_tokens):
+        """執行 k 次長度為 t 的「定點位置對應替換」攻擊。"""
+        
+        # 確保文本長度足夠進行攻擊
+        if min_token_count < t * k:
+            return dst_tokens.clone()
+
+        while True:
+            # 直接在有效的範圍內生成隨機起始點，確保片段不會超出邊界
+            try:
+                rand_insert_locs = torch.randperm(min_token_count - t)[:k]
+            except RuntimeError:
+                # 如果可選的起始點數量小於 k，則無法攻擊
+                return dst_tokens.clone()
+            
+            # 排序位置，方便檢查重疊
+            sorted_locs, _ = torch.sort(rand_insert_locs)
+            
+            # 檢查重疊條件
+            overlap = False
+            for i in range(len(sorted_locs) - 1):
+                if sorted_locs[i] + t > sorted_locs[i+1]:
+                    overlap = True
+                    break
+            
+            # 如果沒有重疊，則找到了有效的位置組合
+            if not overlap:
+                break
+        
+        # 執行替換操作
+        result_tokens = dst_tokens.clone()
+        
+        for loc in sorted_locs:
+            start_idx = loc.item()
+            end_idx = start_idx + t
+            
+            # 核心邏輯：用源文本的對應位置替換目標文本
+            result_tokens[start_idx:end_idx] = src_tokens[start_idx:end_idx]
+        
+        return result_tokens
+
+    def edit(self, text: str, reference: str = None):
+        """
+        執行 Copy-Paste 攻擊。
+
+        參數:
+            text (str): 目標文本
+            reference (str): 源文本
+
+        返回:
+            str: 攻擊後的文本
+        """
+        if reference is None:
+            return text
+        
+        # Tokenize 兩個文本
+        dst_tokens = self._tokenize_text(reference)
+        src_tokens = self._tokenize_text(text)
+        
+        # 檢查長度條件
+        if self.min_length > 0:
+            if len(dst_tokens) < self.min_length or len(src_tokens) < self.min_length:
+                return ""
+        
+        min_token_count = min(len(dst_tokens), len(src_tokens))
+        
+        # 根據攻擊類型執行不同的攻擊
+        if self.attack_type == "single-single":
+            attacked_tokens = self._single_insertion(
+                self.insertion_length, min_token_count, dst_tokens, src_tokens
+            )
+        elif self.attack_type == "k-t":
+            attacked_tokens = self._k_insertion_t_len(
+                self.num_insertions, self.insertion_length, 
+                min_token_count, dst_tokens, src_tokens
+            )
+        else:
+            raise ValueError(f"不支援的攻擊類型: {self.attack_type}")
+        
+        # 將 tokens 轉換回文本
+        attacked_text = self.tokenizer.decode(attacked_tokens, skip_special_tokens=True)
+        
+        return attacked_text
+
+
+class PercentageCopyPasteAttack(CopyPasteAttack):
+    """支援小數比例形式的 Copy-Paste 攻擊。"""
+
+    def __init__(self, tokenizer, 
+                 num_insertions: int = 3,
+                 insertion_ratio: float = 0.25,
+                 max_new_tokens: int = 200,
+                 min_length: int = 0,
+                 attack_type: str = "k-t") -> None:
+        """
+        初始化支援小數比例的 Copy-Paste 攻擊。
+
+        參數:
+            tokenizer: 用於 tokenization 的 tokenizer
+            num_insertions (int): 插入次數
+            insertion_ratio (float): 插入比例，如 0.25 表示 25%
+            max_new_tokens (int): 最大新 token 數，用於比例計算
+            min_length (int): 最小文本長度
+            attack_type (str): 攻擊類型
+        """
+        # 驗證比例值的合理性
+        if not 0.0 <= insertion_ratio <= 1.0:
+            raise ValueError(f"insertion_ratio 必須在 0.0 到 1.0 之間，當前值: {insertion_ratio}")
+        
+        # 計算實際插入長度
+        insertion_length = int(insertion_ratio * max_new_tokens) // num_insertions
+        
+        super().__init__(tokenizer, num_insertions, insertion_length, min_length, attack_type)
+        
+        self.insertion_ratio = insertion_ratio
+        self.max_new_tokens = max_new_tokens
+        
+        # 計算有效攻擊百分比（用於顯示）
+        self.effective_attack_percentage = (1 - insertion_ratio) * 100
