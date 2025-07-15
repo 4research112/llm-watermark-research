@@ -161,13 +161,12 @@ def create_watermark(params: ExperimentParams, transformers_config):
     """創建水印實例"""
     print(f"初始化 {params.algorithm_name} 水印...")
     
-    watermark_params = {
-        'algorithm_config': f'config/{params.algorithm_name}.json',
-        'transformers_config': transformers_config,
+    watermark = AutoWatermark.load(
+        algorithm_name=params.algorithm_name,
+        algorithm_config=f'config/{params.algorithm_name}.json',
+        transformers_config=transformers_config,
         **params.get_watermark_param()
-    }
-    
-    watermark = AutoWatermark.load(params.algorithm_name, **watermark_params)
+    )
     
     if params.is_exp_algorithm:
         print(f"temperature: {watermark.config.temperature}")
@@ -320,7 +319,6 @@ def assess_robustness_v2(params: ExperimentParams):
     # 如果攻擊是 k-t 或 single-single，則不對 unwm 使用攻擊
     if params.attack_name == 'k-t' or params.attack_name == 'single-single':
         attack_list = []
-        print(f'{params.attack_name} attack is not used for unwm !!')
 
     unwm_pipeline = UnwatermarkedTextDetectionPipeline_V2(
         dataset=dataset,
@@ -439,7 +437,7 @@ def assess_signature_robustness(params: ExperimentParams):
         output_dir=params.output_dir,
         watermarked_texts_path=params.watermarked_texts_path,
         extract_colors=params.extract_colors,
-        return_type=DetectionPipelineReturnType.SCORES,
+        return_type=DetectionPipelineReturnType.IS_WATERMARKED,
         generation_mode=params.generation_mode,
         signature_config=signature_config
     )
@@ -450,13 +448,15 @@ def assess_signature_robustness(params: ExperimentParams):
         watermark=watermark,
         output_dir=params.output_dir,
         extract_colors=params.extract_colors,  
-        return_type=DetectionPipelineReturnType.SCORES,
+        return_type=DetectionPipelineReturnType.IS_WATERMARKED,
         text_source_mode=params.text_source_mode,
         signature_config=signature_config
     )
     
     # 執行評估
-    calculator = DynamicThresholdSuccessRateCalculator(labels=['TPR', 'F1'], rule='best')
+    calculator = FundamentalSuccessRateCalculator(
+        labels=['TPR', 'TNR', 'FPR', 'FNR', 'P', 'R', 'F1', 'ACC']
+    )
     
     signature_metrics = calculator.calculate(
         wm_signature_pipeline.evaluate(),

@@ -240,7 +240,7 @@ class Unigram(BaseWatermark):
 
         # Traverse all possible windows
         for L in range(min_L, max_L + 1, window_interval):
-            for start_idx in range(self.config.prefix_length, len(token_flags) - L + 1):
+            for start_idx in range(0, len(token_flags) - L + 1):
                 z_score = self.utils.score_sequence_by_window(token_flags, start_idx, start_idx + L)
                 if z_score > max_z_score:
                     max_z_score = z_score

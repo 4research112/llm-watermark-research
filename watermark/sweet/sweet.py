@@ -90,10 +90,20 @@ class SWEETUtils:
         z = numer / denom
         return z
 
-    def score_sequence_by_window(self, token_flags: list, start_idx: int, end_idx: int) -> float:
+    def score_sequence_by_window(self, token_flags: list, weights: list, start_idx: int, end_idx: int) -> float:
         """Compute z-score for a window of length L starting at start_idx."""
-        green_token_count = sum(token_flags[start_idx: end_idx])
-        z_score = self._compute_z_score(green_token_count, end_idx - start_idx)
+        # Process token flags to only consider green tokens with high entropy
+        processed_token_flags = [
+            -1 if flag == -1 else (1 if flag == 1 and weight == 1 else 0) 
+            for flag, weight in zip(token_flags, weights)
+        ]
+        green_token_count = sum(processed_token_flags[start_idx: end_idx])
+        num_tokens_scored = sum(weights[start_idx: end_idx])
+
+        if num_tokens_scored == 0:
+            return 0.0
+        
+        z_score = self._compute_z_score(green_token_count, num_tokens_scored)
         return z_score
 
     def score_sequence(self, input_ids: torch.Tensor, entropy_list: list[float]) -> tuple[float, list[int], list[int]]:
@@ -259,7 +269,7 @@ class SWEET(BaseWatermark):
         else:
             return (is_watermarked, z_score)
 
-    def get_token_flags(self, text: str, *args, **kwargs):
+    def get_token_flags_and_weights(self, text: str, *args, **kwargs):
         """Get token flags for the text."""
         
         # Encode the text
@@ -271,18 +281,14 @@ class SWEET(BaseWatermark):
         # Compute token flags
         _, token_flags, weights = self.utils.score_sequence(encoded_text, entropy_list)
 
-        token_flags = [
-            -1 if flag == -1 else (1 if flag == 1 and weight == 1 else 0) 
-            for flag, weight in zip(token_flags, weights)
-        ]
-        return token_flags
+        return token_flags, weights
 
 
     def detect_watermark_win_max(self, text: str, return_dict: bool = True, min_L: int = 1, max_L: int = None, window_interval: int = 1, *args, **kwargs):
         """Detect watermark in the text using WinMax algorithm."""
         
         # Get token flags
-        token_flags = self.get_token_flags(text)
+        token_flags, weights = self.get_token_flags_and_weights(text)
 
         if max_L is None:
             max_L = len(token_flags) - self.config.prefix_length
@@ -293,7 +299,7 @@ class SWEET(BaseWatermark):
         # Traverse all possible windows
         for L in range(min_L, max_L + 1, window_interval):
             for start_idx in range(self.config.prefix_length, len(token_flags) - L + 1):
-                z_score = self.utils.score_sequence_by_window(token_flags, start_idx, start_idx + L)
+                z_score = self.utils.score_sequence_by_window(token_flags, weights, start_idx, start_idx + L)
                 if z_score > max_z_score:
                     max_z_score = z_score
                     flag_start_idx, flag_end_idx = start_idx, start_idx + L
@@ -313,7 +319,7 @@ class SWEET(BaseWatermark):
     def detect_watermark_with_fix_window(self, text: str, return_dict: bool = True, L: int = 200, threshold: int = 4.0, *args, **kwargs):
         """Detect watermark in the text using fixed window algorithm."""
         
-        token_flags = self.get_token_flags(text)
+        token_flags, weights = self.get_token_flags_and_weights(text)
 
         is_watermarked = False
 
@@ -321,7 +327,7 @@ class SWEET(BaseWatermark):
 
         # Traverse through the text and calculate the score for each window
         for i in range(self.config.prefix_length, len(token_flags) - L + 1):
-            z_score = self.utils.score_sequence_by_window(token_flags, i, i + L)
+            z_score = self.utils.score_sequence_by_window(token_flags, weights, i, i + L)
             if z_score > threshold:
                 is_watermarked = True
                 indices.append((i, i + L, z_score))
