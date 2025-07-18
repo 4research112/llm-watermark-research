@@ -49,7 +49,7 @@ class ExperimentParams:
     attack_name: Optional[str] = None
     use_winmax: bool = False
     # n-gram signature config
-    n: int = 2
+    n: Optional[int] = None
     # 其他參數
     extract_colors: bool = True
     text_source_mode: str = "natural"
@@ -83,6 +83,26 @@ class ExperimentParams:
             return {'temperature': self.temperature}
         else:
             return {'delta': self.delta}
+    
+    def __repr__(self) -> str:
+        return (
+            f"ExperimentParams(\n"
+            f"  algorithm_name='{self.algorithm_name}',\n"
+            f"  model_name='{self.model_name}',\n"
+            f"  dataset_path='{self.dataset_path}',\n"
+            f"  max_samples={self.max_samples},\n"
+            f"  output_dir='{self.output_dir}',\n"
+            f"  watermarked_texts_path={self.watermarked_texts_path!r},\n"
+            f"  generation_mode='{self.generation_mode}',\n"
+            f"  attack_name={self.attack_name!r},\n"
+            f"  delta={self.delta},\n"
+            f"  temperature={self.temperature},\n"
+            f"  use_winmax={self.use_winmax},\n"
+            f"  n={self.n},\n"
+            f"  extract_colors={self.extract_colors},\n"
+            f"  text_source_mode='{self.text_source_mode}'\n"
+            f")"
+        )
 
 @dataclass
 class DatasetConfig:
@@ -263,7 +283,8 @@ def assess_detection(params: ExperimentParams):
         watermarked_texts_path=params.watermarked_texts_path,
         extract_colors=params.extract_colors,
         return_type=DetectionPipelineReturnType.IS_WATERMARKED,
-        generation_mode=params.generation_mode
+        generation_mode=params.generation_mode,
+        use_winmax=params.use_winmax
     )
     
     unwm_pipeline = UnwatermarkedTextDetectionPipeline_V2(
@@ -272,7 +293,8 @@ def assess_detection(params: ExperimentParams):
         output_dir=params.output_dir,
         extract_colors=params.extract_colors,
         return_type=DetectionPipelineReturnType.IS_WATERMARKED,
-        text_source_mode=params.text_source_mode
+        text_source_mode=params.text_source_mode,
+        use_winmax=params.use_winmax
     )
     
     # 執行評估
@@ -348,6 +370,9 @@ def assess_signature_detection(params: ExperimentParams):
     """簽名檢測實驗"""
     if params.is_exp_algorithm:
         raise ValueError("EXP 算法不支援簽名檢測")
+    
+    if params.n is None:
+        raise ValueError("簽名檢測需要指定 n 參數")
         
     model, tokenizer, transformers_config = get_transformes_config(params.model_name)
     
@@ -373,7 +398,8 @@ def assess_signature_detection(params: ExperimentParams):
         extract_colors=params.extract_colors,
         return_type=DetectionPipelineReturnType.IS_WATERMARKED,
         generation_mode=params.generation_mode,
-        signature_config=signature_config
+        signature_config=signature_config,
+        use_winmax=params.use_winmax
     )
 
     unwm_signature_pipeline = SignatureAwareUnwatermarkedTextDetectionPipeline_V2(
@@ -383,7 +409,8 @@ def assess_signature_detection(params: ExperimentParams):
         extract_colors=params.extract_colors,  
         return_type=DetectionPipelineReturnType.IS_WATERMARKED,  
         text_source_mode=params.text_source_mode,
-        signature_config=signature_config
+        signature_config=signature_config,
+        use_winmax=params.use_winmax
     )
     
     # 執行評估
@@ -409,6 +436,9 @@ def assess_signature_robustness(params: ExperimentParams):
     """簽名魯棒性實驗"""
     if params.is_exp_algorithm:
         raise ValueError("EXP 算法不支援簽名檢測")
+    
+    if params.n is None:
+        raise ValueError("簽名魯棒性測試需要指定 n 參數")
         
     model, tokenizer, transformers_config = get_transformes_config(params.model_name)
     
@@ -420,7 +450,7 @@ def assess_signature_robustness(params: ExperimentParams):
     watermark = create_watermark(params, transformers_config)
     
     # 創建攻擊
-    attack = create_attack(params, model, tokenizer, transformers_config)
+    attack = create_attack(params, tokenizer, transformers_config)
     attack_list = [attack] if attack else []
     
     # 簽名配置
@@ -439,7 +469,8 @@ def assess_signature_robustness(params: ExperimentParams):
         extract_colors=params.extract_colors,
         return_type=DetectionPipelineReturnType.IS_WATERMARKED,
         generation_mode=params.generation_mode,
-        signature_config=signature_config
+        signature_config=signature_config,
+        use_winmax=params.use_winmax
     )
 
     unwm_signature_pipeline = SignatureAwareUnwatermarkedTextDetectionPipeline_V2(
@@ -450,7 +481,8 @@ def assess_signature_robustness(params: ExperimentParams):
         extract_colors=params.extract_colors,  
         return_type=DetectionPipelineReturnType.IS_WATERMARKED,
         text_source_mode=params.text_source_mode,
-        signature_config=signature_config
+        signature_config=signature_config,
+        use_winmax=params.use_winmax
     )
     
     # 執行評估
@@ -474,15 +506,15 @@ def assess_signature_robustness(params: ExperimentParams):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--algorithm', type=str, default='EXP')
-    parser.add_argument('--attack', type=str, default='k-t')
+    parser.add_argument('--algorithm', type=str, default='SWEET')
+    parser.add_argument('--attack', type=str, default=None, choices=['Word-D', 'Word-S', 'Word-S-Context', 'scramble', 'single-single', 'k-t'])
     parser.add_argument('--dataset', type=str, default='dataset/c4/processed_c4.json', help='數據集路徑')
     parser.add_argument('--max_samples', type=int, default=1)
-    parser.add_argument('--output_dir', type=str, default='meeting/exp_winmax')
-    parser.add_argument('--watermarked_texts_path', type=str, default='tables_data_1000/llama3.1/exp/enc4_t0.5/watermarked_texts.json')
+    parser.add_argument('--output_dir', type=str, default='meeting/sweet_scramble_winmax')
+    parser.add_argument('--watermarked_texts_path', type=str, default='texts1000/llama3.1/sweet/enc4_d1/watermarked_texts.json')
     parser.add_argument('--delta', type=float, default=1.0)
     parser.add_argument('--generation_mode', type=str, default='load')
-    parser.add_argument('--n', type=int, default=2, help='N-gram value for signature config')
+    parser.add_argument('--n', type=int, default=None, help='N-gram value for signature config')
     parser.add_argument('--temperature', type=float, default=1.0, help='Temperature for generation')
     parser.add_argument('--use_winmax', action='store_true', help='use winmax detection for kgw watermark')
     parser.add_argument('--model_name', type=str, default='meta-llama/Llama-3.1-8B-Instruct', 
@@ -510,17 +542,13 @@ if __name__ == '__main__':
         model_name=args.model_name
     )
     
-    print(f"實驗配置:")
-    print(f"  model: {params.model_name}")
-    print(f"  watermark: {params.algorithm_name}")
-    print(f"  dataset: {params.dataset_path}")
-    print(f"  max_samples: {params.max_samples}")
-    print(f"  output_dir: {params.output_dir}")
-    print(f"  watermarked_texts_path: {params.watermarked_texts_path}")
-    print(f"  generation_mode: {params.generation_mode}")
-    print(f"  use_winmax: {params.use_winmax}")
+    print(f"實驗配置: \n {params}")
 
-    # watermark detection
-    # assess_detection(params)
-    # watermark robustness
-    assess_robustness_v2(params)
+    if not params.attack_name and not params.n:
+        assess_detection(params)
+    elif params.attack_name and not params.n:
+        assess_robustness_v2(params)
+    elif not params.attack_name and params.n:
+        assess_signature_detection(params)
+    else:
+        assess_signature_robustness(params)
