@@ -18,45 +18,45 @@ class NGramSignatureSetUtils:
     @staticmethod
     def load(file_path: str) -> Tuple[int, Set[Tuple[int, ...]]]:
         """
-        從文件加載 n-gram 簽名集。
+        Load n-gram signature set from file.
         
         Args:
-            file_path: 簽名集文件路徑
+            file_path: signature set file path
             
         Returns:
-            Tuple[int, Set[Tuple[int, ...]]]: n 值和簽名集
+            Tuple[int, Set[Tuple[int, ...]]]: n value and signature set
             
         Raises:
-            FileNotFoundError: 如果文件不存在
-            json.JSONDecodeError: 如果 JSON 格式錯誤
+            FileNotFoundError: if file does not exist
+            json.JSONDecodeError: if JSON format is incorrect
         """
         try:
             with open(file_path, 'r') as f:
                 data = json.load(f)
             
-            n = data.get("n", 3)  # 默認n為3
+            n = data.get("n", 3)  # default n is 3
             ngram_signature_set = {tuple(ngram) for ngram in data.get("signatures", [])}
             
-            print(f"已從 {file_path} 加載 {len(ngram_signature_set)} 個 {n}-gram 簽名")
+            print(f"Loaded {len(ngram_signature_set)} {n}-gram signatures from {file_path}")
             return n, ngram_signature_set
         except FileNotFoundError:
-            raise FileNotFoundError(f"文件不存在: {file_path}")
+            raise FileNotFoundError(f"File does not exist: {file_path}")
         except json.JSONDecodeError as e:
-            raise json.JSONDecodeError(f"JSON 格式錯誤: {e.msg}", e.doc, e.pos)
+            raise json.JSONDecodeError(f"JSON format error: {e.msg}", e.doc, e.pos)
     
     @staticmethod
     def save(ngram_signature_set: Set[Tuple[int, ...]], n: int, save_path: str) -> None:
         """
-        保存 n-gram 簽名集到文件。
+        Save n-gram signature set to file.
         
         Args:
-            ngram_signature_set: n-gram 簽名集
-            n: n-gram 的 n 值
-            save_path: 保存路徑
+            ngram_signature_set: n-gram signature set
+            n: n-gram value
+            save_path: save path
         """
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         
-        # 將 tuple 轉換為可序列化的列表
+        # Convert tuple to list that can be serialized
         saveable_signatures = [list(ngram) for ngram in ngram_signature_set]
         
         with open(save_path, 'w') as f:
@@ -64,34 +64,34 @@ class NGramSignatureSetUtils:
                 "n": n,
                 "signatures": saveable_signatures
             }, f)
-        print(f"已保存 {len(ngram_signature_set)} 個 {n}-gram 簽名到 {save_path}")
+        print(f"Saved {len(ngram_signature_set)} {n}-gram signatures to {save_path}")
 
 
 class NGramSignatureSetCollector(SignatureSetCollector):
     """
-    用於收集和管理 n-gram 簽名集合的工具類。
+    A tool class for collecting and managing n-gram signature sets.
     
-    收集生成式水印中連續 n 個或更多的「紅字」tokens，用於後續檢測時提高準確性。
+    Collects consecutive "red" tokens in generative watermarking for later detection to improve accuracy.
     """
     
     def __init__(self, watermark, n=3) -> None:
         """
-        初始化 n-gram 簽名收集器。
+        Initialize n-gram signature collector.
         
         Args:
-            watermark: 水印系統實例，用於獲取綠名單和其他信息
-            n: 連續紅字的最小長度
+            watermark: watermark system instance, used to get greenlist and other information
+            n: minimum length of consecutive red tokens
         """
         super().__init__(watermark)
         self.n = n
-        self.ngram_signature_set: Set[Tuple[int, ...]] = set()  # 存儲 n-gram 簽名
+        self.ngram_signature_set: Set[Tuple[int, ...]] = set()  # store n-gram signatures
     
     def collect_from_text(self, text: str) -> None:
         """
-        從單一文本收集符合 n-gram 條件的連續紅字。
+        Collect consecutive red tokens from a single text that meet n-gram conditions.
         
         Args:
-            text: 要分析的文本
+            text: text to analyze
         """
         encoded_text = self.tokenizer(text, return_tensors="pt", add_special_tokens=False)["input_ids"][0].to(self.device)
         
@@ -102,108 +102,108 @@ class NGramSignatureSetCollector(SignatureSetCollector):
         elif isinstance(self.watermark, Unigram):
             self._collect_ngram_from_unigram(encoded_text)
         else:
-            raise NotImplementedError(f"不支援的水印類型: {type(self.watermark).__name__}")
+            raise NotImplementedError(f"Unsupported watermark type: {type(self.watermark).__name__}")
     
     def _collect_ngram_from_kgw(self, encoded_text: torch.LongTensor) -> None:
-        """從 KGW 水印文本中收集符合 n-gram 條件的連續紅字。"""
-        # 1. 標記每個位置是紅字還是綠字
+        """Collect consecutive red tokens from KGW watermark text that meet n-gram conditions."""
+        # 1. Mark each position as red or green
         red_flags = []
         for idx in range(self.prefix_length, len(encoded_text)):
             curr_token = encoded_text[idx].item()
             greenlist_ids = self.watermark.utils.get_greenlist_ids(encoded_text[:idx])
             red_flags.append(curr_token not in greenlist_ids)
         
-        # 2. 收集連續 n 個或更多的紅字序列
+        # 2. Collect consecutive n or more red token sequences
         current_seq = []
         for idx, is_red in enumerate(red_flags):
             if is_red:
-                # 如果是紅字，加入當前序列
+                # If it's a red token, add it to the current sequence
                 current_seq.append(encoded_text[idx + self.prefix_length].item())
                 
-                # 如果序列長度達到 n，就提取一個新的 n-gram
+                # If the sequence length reaches n, extract a new n-gram
                 if len(current_seq) >= self.n:
-                    ngram = tuple(current_seq[-self.n:])  # 取最後 n 個元素
+                    ngram = tuple(current_seq[-self.n:])  # Take the last n elements
                     self.ngram_signature_set.add(ngram)
             else:
-                # 遇到綠字時重置序列
+                # When encountering a green token, reset the sequence
                 current_seq = []
     
     def _collect_ngram_from_sweet(self, encoded_text: torch.LongTensor) -> None:
         """
-        從 SWEET 水印文本中收集符合 n-gram 條件的連續紅字。
+        Collect consecutive red tokens from SWEET watermark text that meet n-gram conditions.
         
-        SWEET 的紅字判定需要同時滿足：
-        1. 不在綠名單中
-        2. 熵值高於閾值
+        SWEET's red token determination requires both:
+        1. Not in the greenlist
+        2. Entropy value higher than threshold
         """
-        # 1. 計算熵值
+        # 1. Calculate entropy
         entropy_list = self.watermark.utils.calculate_entropy(
             self.watermark.config.generation_model, 
             encoded_text
         )
         
-        # 2. 標記每個位置是紅字還是綠字
+        # 2. Mark each position as red or green
         red_flags = []
         for idx in range(self.prefix_length, len(encoded_text)):
             curr_token = encoded_text[idx].item()
             greenlist_ids = self.watermark.utils.get_greenlist_ids(encoded_text[:idx])
             
-            # 檢查熵值是否高於閾值
+            # Check if entropy is higher than threshold
             is_high_entropy = idx < len(entropy_list) and entropy_list[idx] > self.watermark.config.entropy_threshold
             
-            # 同時滿足：不在綠名單且熵值高
+            # Both must be true: not in greenlist and entropy is high
             red_flags.append(curr_token not in greenlist_ids and is_high_entropy)
         
-        # 3. 收集連續 n 個或更多的紅字序列
+        # 3. Collect consecutive n or more red token sequences
         current_seq = []
         for idx, is_red in enumerate(red_flags):
             if is_red:
-                # 如果是紅字，加入當前序列
+                # If it's a red token, add it to the current sequence
                 current_seq.append(encoded_text[idx + self.prefix_length].item())
                 
-                # 如果序列長度達到 n，就提取一個新的 n-gram
+                # If the sequence length reaches n, extract a new n-gram
                 if len(current_seq) >= self.n:
-                    ngram = tuple(current_seq[-self.n:])  # 取最後 n 個元素
+                    ngram = tuple(current_seq[-self.n:])  # Take the last n elements
                     self.ngram_signature_set.add(ngram)
             else:
-                # 遇到綠字時重置序列
+                # When encountering a green token, reset the sequence
                 current_seq = []
     
     def _collect_ngram_from_unigram(self, encoded_text: torch.LongTensor) -> None:
-        """ 從 Unigram 水印文本中收集符合 n-gram 條件的連續紅字。"""
-        # 1. 標記每個位置是紅字還是綠字
+        """Collect consecutive red tokens from Unigram watermark text that meet n-gram conditions."""
+        # 1. Mark each position as red or green
         red_flags = []
         for idx in range(len(encoded_text)):
             curr_token = encoded_text[idx].item()
             red_flags.append(not self.watermark.utils.mask[curr_token])
         
-        # 2. 收集連續 n 個或更多的紅字序列
+        # 2. Collect consecutive n or more red token sequences
         current_seq = []
         for idx, is_red in enumerate(red_flags):
             if is_red:
-                # 如果是紅字，加入當前序列
+                # If it's a red token, add it to the current sequence
                 current_seq.append(encoded_text[idx].item())
                 
-                # 如果序列長度達到 n，就提取一個新的 n-gram
+                # If the sequence length reaches n, extract a new n-gram
                 if len(current_seq) >= self.n:
-                    ngram = tuple(current_seq[-self.n:])  # 取最後 n 個元素
+                    ngram = tuple(current_seq[-self.n:])  # Take the last n elements
                     self.ngram_signature_set.add(ngram)
             else:
-                # 遇到綠字時重置序列
+                # When encountering a green token, reset the sequence
                 current_seq = []
     
     def save_ngram_signature_set(self, save_path: str) -> None:
-        """保存 n-gram 簽名集到文件"""
+        """Save n-gram signature set to file"""
         NGramSignatureSetUtils.save(self.ngram_signature_set, self.n, save_path)
     
     def load_ngram_signature_set(self, file_path: str) -> None:
-        """從文件加載 n-gram 簽名集"""
+        """Load n-gram signature set from file"""
         self.n, self.ngram_signature_set = NGramSignatureSetUtils.load(file_path)
 
 
 class KGWNGramSignature(KGWSignature):  
     """
-    KGW水印的 n-gram 簽名感知版本，根據連續紅字規則進行檢測。
+    KGW watermark with n-gram signature-aware detection.
     """
     
     def __init__(
@@ -219,16 +219,16 @@ class KGWNGramSignature(KGWSignature):
         **kwargs
     ) -> None:
         """
-        初始化 n-gram 簽名感知的KGW水印。
+        Initialize n-gram signature-aware KGW watermark.
         
         Args:
-            algorithm_config: 算法配置文件路徑或配置對象
-            transformers_config: Transformers配置
-            n: 連續紅字的最小長度
-            signature_set: 簽名集合
-            signature_file: 簽名文件路徑
-            ngram_signature_set: n-gram 簽名集合
-            ngram_signature_file: n-gram 簽名文件路徑
+            algorithm_config: algorithm configuration file path or configuration object
+            transformers_config: Transformers configuration
+            n: minimum length of consecutive red tokens
+            signature_set: signature set
+            signature_file: signature file path
+            ngram_signature_set: n-gram signature set
+            ngram_signature_file: n-gram signature file path
         """
         super().__init__(algorithm_config, transformers_config, signature_set, signature_file, *args, **kwargs)
         
@@ -241,15 +241,15 @@ class KGWNGramSignature(KGWSignature):
             self.load_ngram_signature_set(ngram_signature_file)
 
     def load_ngram_signature_set(self, file_path: str) -> None:
-        """從文件加載 n-gram 簽名集"""
+        """Load n-gram signature set from file"""
         self.n, self.ngram_signature_set = NGramSignatureSetUtils.load(file_path)
     
     def save_ngram_signature_set(self, save_path: str) -> None:
-        """保存 n-gram 簽名集到文件"""
+        """Save n-gram signature set to file"""
         NGramSignatureSetUtils.save(self.ngram_signature_set, self.n, save_path)
     
     def detect_watermark(self, text: str, return_dict: bool = True, *args, **kwargs) -> Union[Dict[str, Any], Tuple[bool, float]]:
-        """使用 n-gram 規則進行水印檢測"""
+        """Detect watermark using n-gram rules"""
         encoded_text = self.config.generation_tokenizer(text, return_tensors="pt", add_special_tokens=False)["input_ids"][0].to(self.config.device)
         
         z_score, green_tokens = self.ngram_score_sequence(encoded_text)
@@ -269,43 +269,43 @@ class KGWNGramSignature(KGWSignature):
     
     def ngram_score_sequence(self, input_ids: torch.LongTensor) -> Tuple[float, List[int]]:
         """
-        應用 n-gram 連續紅字規則進行評分。
+        Apply n-gram consecutive red token rules for scoring.
         
         Args:
-            input_ids: 編碼後的文本張量
+            input_ids: encoded text tensor
         
         Returns:
-            Tuple[float, List[int]]: z-score 值和標記列表
-            標記列表中：-1 表示在 prefix 或 signature 中，1 表示綠字，0 表示紅字
+            Tuple[float, List[int]]: z-score and token flags
+            Token flags: -1 in prefix or signature, 1 in greenlist, 0 in red
         """
         if len(input_ids) == 0:
             return 0.0, []
         
-        # 1. 先標記所有 token 為綠字
+        # 1. Mark all tokens as green
         token_flags = [1] * len(input_ids)
         
-        # 2. 標記 prefix 為 -1
-        prefix_length = self.config.prefix_length  # 從 config 獲取 prefix_length
+        # 2. Mark prefix as -1
+        prefix_length = self.config.prefix_length  # Get prefix_length from config
         for i in range(min(prefix_length, len(input_ids))):
             token_flags[i] = -1
         
-        # 3. 檢查每個可能的 n-gram 序列是否匹配完整的 signature
+        # 3. Check if each possible n-gram sequence matches the complete signature
         for i in range(prefix_length, len(input_ids) - self.n + 1):
             current_ngram = tuple(input_ids[i:i+self.n].tolist())
             if current_ngram in self.ngram_signature_set:
-                # 找到完整的 signature，將整個序列標記為 -1
+                # Found complete signature, mark the entire sequence as -1
                 for j in range(i, i + self.n):
                     token_flags[j] = -1
         
-        # 4. 對於未被標記為 signature 的 token，根據 greenlist 判斷紅綠字
+        # 4. For tokens not marked as signature, determine red or green based on greenlist
         for i in range(prefix_length, len(input_ids)):
-            if token_flags[i] != -1:  # 如果不是 signature
-                # 獲取當前位置的綠名單
+            if token_flags[i] != -1:  # If it's not a signature
+                # Get greenlist at current position
                 greenlist = self.utils.get_greenlist_ids(input_ids[:i])
                 curr_token = input_ids[i].item()
                 token_flags[i] = 1 if curr_token in greenlist else 0
         
-        # 5. 計算 z-score（只考慮不在 prefix 和 signature 中的 token）
+        # 5. Calculate z-score (only consider tokens not in prefix or signature)
         green_count = sum(1 for flag in token_flags[prefix_length:] if flag == 1)
         valid_count = sum(1 for flag in token_flags[prefix_length:] if flag != -1)
 
@@ -345,16 +345,16 @@ class KGWNGramSignature(KGWSignature):
     @property
     def ngram_signature_set_size(self) -> int:
         """
-        返回 n-gram 簽名集大小。
+        Return n-gram signature set size.
         
         Returns:
-            int: n-gram 簽名集中的序列數量
+            int: number of sequences in n-gram signature set
         """
         return len(self.ngram_signature_set)
     
 class SweetNGramSignature(SweetSignature):
     """
-    SWEET水印的 n-gram 簽名感知版本，根據連續紅字規則進行檢測。
+    SWEET watermark with n-gram signature-aware detection.
     """
     
     def __init__(
@@ -370,16 +370,16 @@ class SweetNGramSignature(SweetSignature):
         **kwargs
     ) -> None:
         """
-        初始化 n-gram 簽名感知的SWEET水印。
+        Initialize n-gram signature-aware SWEET watermark.
         
         Args:
-            algorithm_config: 算法配置文件路徑或配置對象
-            transformers_config: Transformers配置
-            n: 連續紅字的最小長度
-            signature_set: 簽名集合
-            signature_file: 簽名文件路徑
-            ngram_signature_set: n-gram 簽名集合
-            ngram_signature_file: n-gram 簽名文件路徑
+            algorithm_config: algorithm configuration file path or configuration object
+            transformers_config: Transformers configuration
+            n: minimum length of consecutive red tokens
+            signature_set: signature set
+            signature_file: signature file path
+            ngram_signature_set: n-gram signature set
+            ngram_signature_file: n-gram signature file path
         """
         super().__init__(algorithm_config, transformers_config, signature_set, signature_file, *args, **kwargs)
         
@@ -392,15 +392,15 @@ class SweetNGramSignature(SweetSignature):
             self.load_ngram_signature_set(ngram_signature_file)
     
     def load_ngram_signature_set(self, file_path: str) -> None:
-        """從文件加載 n-gram 簽名集"""
+        """Load n-gram signature set from file"""
         self.n, self.ngram_signature_set = NGramSignatureSetUtils.load(file_path)
     
     def save_ngram_signature_set(self, save_path: str) -> None:
-        """保存 n-gram 簽名集到文件"""
+        """Save n-gram signature set to file"""
         NGramSignatureSetUtils.save(self.ngram_signature_set, self.n, save_path)
     
     def detect_watermark(self, text: str, return_dict: bool = True, *args, **kwargs) -> Union[Dict[str, Any], Tuple[bool, float]]:
-        """使用 n-gram 規則進行水印檢測"""
+        """Detect watermark using n-gram rules"""
         encoded_text = self.config.generation_tokenizer(text, return_tensors="pt", add_special_tokens=False)["input_ids"][0].to(self.config.device)
         
         z_score, green_tokens = self.ngram_score_sequence(encoded_text)
@@ -420,59 +420,59 @@ class SweetNGramSignature(SweetSignature):
     
     def ngram_score_sequence(self, input_ids: torch.LongTensor) -> Tuple[float, List[int]]:
         """
-        應用 n-gram 連續紅字規則進行評分。
+        Apply n-gram consecutive red token rules for scoring.
         
         Args:
-            input_ids: 編碼後的文本張量
+            input_ids: encoded text tensor
         
         Returns:
-            Tuple[float, List[int]]: z-score 值和標記列表
-            標記列表中：-1 表示在 prefix、signature 中或是低熵字，1 表示綠字，0 表示紅字
+            Tuple[float, List[int]]: z-score and token flags
+            Token flags: -1 in prefix or signature, 1 in greenlist, 0 in red
         """
         if len(input_ids) == 0:
             return 0.0, []
         
-        # 1. 先標記所有 token 為綠字
+        # 1. Mark all tokens as green
         token_flags = [1] * len(input_ids)
         
-        # 2. 標記 prefix 為 -1
-        prefix_length = self.config.prefix_length  # 從 config 獲取 prefix_length
+        # 2. Mark prefix as -1
+        prefix_length = self.config.prefix_length  # Get prefix_length from config
         for i in range(min(prefix_length, len(input_ids))):
             token_flags[i] = -1
         
-        # 3. 計算熵值
+        # 3. Calculate entropy
         entropy_list = self.utils.calculate_entropy(
             self.config.generation_model, 
             input_ids
         )
         
-        # 4. 檢查每個可能的 n-gram 序列是否匹配完整的 signature
+        # 4. Check if each possible n-gram sequence matches the complete signature
         for i in range(prefix_length, len(input_ids) - self.n + 1):
             current_ngram = tuple(input_ids[i:i+self.n].tolist())
             if current_ngram in self.ngram_signature_set:
-                # 找到完整的 signature，將整個序列標記為 -1
+                # Found complete signature, mark the entire sequence as -1
                 for j in range(i, i + self.n):
                     token_flags[j] = -1
         
-        # 5. 對於未被標記為 signature 的 token，根據 greenlist 和熵值判斷紅綠字
+        # 5. For tokens not marked as signature, determine red or green based on greenlist and entropy
         for i in range(prefix_length, len(input_ids)):
-            if token_flags[i] != -1:  # 如果不是 signature
-                # 檢查熵值
+            if token_flags[i] != -1:  # If it's not a signature
+                # Check entropy
                 is_high_entropy = i < len(entropy_list) and entropy_list[i] > self.config.entropy_threshold
                 
                 if not is_high_entropy:
-                    # 低熵字不參與水印檢測，標記為 -1
+                    # Low entropy tokens do not participate in watermark detection, marked as -1
                     token_flags[i] = -1
                     continue
                     
-                # 對於高熵字，獲取當前位置的綠名單並判斷
+                # For high entropy tokens, get greenlist at current position and determine red or green
                 greenlist = self.utils.get_greenlist_ids(input_ids[:i])
                 curr_token = input_ids[i].item()
                 
-                # 在綠名單中為綠字，否則為紅字
+                # In greenlist is green, otherwise red
                 token_flags[i] = 1 if curr_token in greenlist else 0
         
-        # 6. 計算 z-score（只考慮高熵且不在 prefix 和 signature 中的 token）
+        # 6. Calculate z-score (only consider tokens with high entropy and not in prefix or signature)
         green_count = sum(1 for flag in token_flags if flag == 1)
         valid_count = sum(1 for flag in token_flags if flag == 0 or flag == 1)
 
@@ -488,16 +488,16 @@ class SweetNGramSignature(SweetSignature):
     @property
     def ngram_signature_set_size(self) -> int:
         """
-        返回 n-gram 簽名集大小。
+        Return n-gram signature set size.
         
         Returns:
-            int: n-gram 簽名集中的序列數量
+            int: number of sequences in n-gram signature set
         """
         return len(self.ngram_signature_set)
     
 class UnigramNGramSignature(UnigramSignature): 
     """
-    Unigram水印的 n-gram 簽名感知版本，根據連續紅字規則進行檢測。
+    Unigram watermark with n-gram signature-aware detection.
     """
     
     def __init__(
@@ -513,16 +513,16 @@ class UnigramNGramSignature(UnigramSignature):
         **kwargs
     ) -> None:
         """
-        初始化 n-gram 簽名感知的Unigram水印。
+        Initialize n-gram signature-aware Unigram watermark.
         
         Args:
-            algorithm_config: 算法配置文件路徑或配置對象
-            transformers_config: Transformers配置
-            n: 連續紅字的最小長度
-            signature_set: 簽名集合
-            signature_file: 簽名文件路徑
-            ngram_signature_set: n-gram 簽名集合
-            ngram_signature_file: n-gram 簽名文件路徑
+            algorithm_config: algorithm configuration file path or configuration object
+            transformers_config: Transformers configuration
+            n: minimum length of consecutive red tokens
+            signature_set: signature set
+            signature_file: signature file path
+            ngram_signature_set: n-gram signature set
+            ngram_signature_file: n-gram signature file path
         """
         super().__init__(algorithm_config, transformers_config, signature_set, signature_file, *args, **kwargs)
         
@@ -535,15 +535,15 @@ class UnigramNGramSignature(UnigramSignature):
             self.load_ngram_signature_set(ngram_signature_file)
 
     def load_ngram_signature_set(self, file_path: str) -> None:
-        """從文件加載 n-gram 簽名集"""
+        """Load n-gram signature set from file"""
         self.n, self.ngram_signature_set = NGramSignatureSetUtils.load(file_path)
     
     def save_ngram_signature_set(self, save_path: str) -> None:
-        """保存 n-gram 簽名集到文件"""
+        """Save n-gram signature set to file"""
         NGramSignatureSetUtils.save(self.ngram_signature_set, self.n, save_path)
     
     def detect_watermark(self, text: str, return_dict: bool = True, *args, **kwargs) -> Union[Dict[str, Any], Tuple[bool, float]]:
-        """使用 n-gram 規則進行水印檢測"""
+        """Detect watermark using n-gram rules"""
         encoded_text = self.config.generation_tokenizer(text, return_tensors="pt", add_special_tokens=False)["input_ids"][0].to(self.config.device)
         
         z_score, green_tokens = self.ngram_score_sequence(encoded_text)
@@ -563,35 +563,35 @@ class UnigramNGramSignature(UnigramSignature):
     
     def ngram_score_sequence(self, input_ids: torch.LongTensor) -> Tuple[float, List[int]]:
         """
-        應用 n-gram 連續紅字規則進行評分。
+        Apply n-gram consecutive red token rules for scoring.
         
         Args:
-            input_ids: 編碼後的文本張量
+            input_ids: encoded text tensor
         
         Returns:
-            Tuple[float, List[int]]: z-score 值和標記列表
-            標記列表中：-1 表示在 signature 中，1 表示綠字，0 表示紅字
+            Tuple[float, List[int]]: z-score and token flags
+            Token flags: -1 in signature, 1 in greenlist, 0 in red
         """
         if len(input_ids) == 0:
             return 0.0, []
         
-        # 1. 先標記所有 token 為綠字
+        # 1. Mark all tokens as green
         token_flags = [1] * len(input_ids)
         
-        # 2. 檢查每個可能的 n-gram 序列是否匹配完整的 signature
+        # 2. Check if each possible n-gram sequence matches the complete signature
         for i in range(len(input_ids) - self.n + 1):
             current_ngram = tuple(input_ids[i:i+self.n].tolist())
             if current_ngram in self.ngram_signature_set:
-                # 找到完整的 signature，將整個序列標記為 -1
+                # Found complete signature, mark the entire sequence as -1
                 for j in range(i, i + self.n):
                     token_flags[j] = -1
         
-        # 3. 對於未被標記為 signature 的 token，根據 mask 判斷紅綠字
+        # 3. For tokens not marked as signature, determine red or green based on mask
         for i in range(len(input_ids)):
-            if token_flags[i] != -1:  # 如果不是 signature
+            if token_flags[i] != -1:  # If it's not a signature
                 token_flags[i] = 1 if self.utils.mask[input_ids[i].item()] else 0
         
-        # 4. 計算 z-score（只考慮不在 signature 中的 token）
+        # 4. Calculate z-score (only consider tokens not in signature)
         green_count = sum(1 for flag in token_flags if flag == 1)
         valid_count = sum(1 for flag in token_flags if flag != -1)
 
@@ -607,38 +607,38 @@ class UnigramNGramSignature(UnigramSignature):
     @property
     def ngram_signature_set_size(self) -> int:
         """
-        返回 n-gram 簽名集大小。
+        Return n-gram signature set size.
         
         Returns:
-            int: n-gram 簽名集中的序列數量
+            int: number of sequences in n-gram signature set
         """
         return len(self.ngram_signature_set)
 
 class NGramWatermarkTokenAnalyzer(WatermarkTokenAnalyzer):
     """
-    分析水印文本中 n-gram 連續紅字/綠字的分布。
-    繼承自 WatermarkTokenAnalyzer。
+    Analyze the distribution of n-gram consecutive red/green tokens in watermark text.
+    Inherit from WatermarkTokenAnalyzer.
     """
     
     def __init__(self, watermark: Union[KGW, SWEET, Unigram, 'KGWNGramSignature'], n: int = 3) -> None:
         """
-        初始化 n-gram 分析器。
+        Initialize n-gram analyzer.
         
         Args:
-            watermark: 水印系統實例，用於判斷綠字和紅字
-            n: n-gram 的 n 值
+            watermark: watermark system instance, used to determine green and red tokens
+            n: n-gram n value
         """
         super().__init__(watermark)
         self.n = n
-        # n-gram 紅字和綠字序列的計數器
+        # n-gram red and green token sequence counters
         self.ngram_stats: Dict[Tuple[int, ...], Dict[str, int]] = {}
         
     def analyze_text(self, text: str) -> None:
         """
-        分析文本中每個 token 的綠字和紅字次數，同時分析 n-gram 序列。
+        Analyze the number of green and red tokens for each token in the text, and analyze the n-gram sequence.
         
         Args:
-            text: 水印文本
+            text: watermark text
         """
         encoded_text = self.tokenizer(text, return_tensors="pt", add_special_tokens=False)["input_ids"][0].to(self.device)
         
@@ -649,40 +649,40 @@ class NGramWatermarkTokenAnalyzer(WatermarkTokenAnalyzer):
         elif isinstance(self.watermark, Unigram):
             self._analyze_unigram_with_ngram(encoded_text)
         else:
-            raise NotImplementedError(f"不支援的水印類型: {type(self.watermark).__name__}")
+            raise NotImplementedError(f"Unsupported watermark type: {type(self.watermark).__name__}")
     
     def _analyze_kgw_with_ngram(self, encoded_text: torch.LongTensor) -> None:
         """
-        分析KGW水印文本中綠字和紅字，同時分析n-gram
+        Analyze green and red tokens in KGW watermark text, and analyze n-gram
         
         Args:
-            encoded_text: 編碼後的文本張量
+            encoded_text: encoded text tensor
         """
-        # 標記每個位置是紅字還是綠字
-        token_labels = []  # 1 為綠字，0 為紅字
+        # Mark each position as red or green
+        token_labels = []  # 1 is green, 0 is red
         tokens = []
         
-        # 使用父類方法分析單個 token
+        # Use parent class method to analyze single token
         self._analyze_kgw(encoded_text)
         
-        # 另外收集 token 序列和標記
+        # Collect token sequences and labels
         for idx in range(self.prefix_length, len(encoded_text)):
             curr_token = encoded_text[idx].item()
             tokens.append(curr_token)
             
-            # 獲取綠名單ID
+            # Get greenlist ID
             greenlist_ids = self.watermark.utils.get_greenlist_ids(encoded_text[:idx])
             
-            # 根據是否在綠名單中判斷
+            # Determine if it's in greenlist
             if curr_token in greenlist_ids:
-                token_labels.append(1)  # 綠字
+                token_labels.append(1)  # green
             else:
-                token_labels.append(0)  # 紅字
+                token_labels.append(0)  # red
         
-        # 分析連續 n 個 token 的 n-gram
+        # Analyze n-gram of consecutive n tokens
         for i in range(len(token_labels) - self.n + 1):
             ngram = tuple(tokens[i:i+self.n])
-            # n-gram 的標記：如果全部都是綠字，則為綠字n-gram，否則為紅字n-gram
+            # n-gram label: if all are green, then green n-gram, otherwise red n-gram
             ngram_label = 1 if all(label == 1 for label in token_labels[i:i+self.n]) else 0
             
             if ngram not in self.ngram_stats:
@@ -695,19 +695,19 @@ class NGramWatermarkTokenAnalyzer(WatermarkTokenAnalyzer):
     
     def _analyze_sweet_with_ngram(self, encoded_text: torch.LongTensor) -> None:
         """
-        分析SWEET水印文本中綠字和紅字，同時分析n-gram
+        Analyze green and red tokens in SWEET watermark text, and analyze n-gram
         
         Args:
-            encoded_text: 編碼後的文本張量
+            encoded_text: encoded text tensor
         """
-        # 標記每個位置是紅字還是綠字
-        token_labels = []  # 1 為綠字，0 為紅字
+        # Mark each position as red or green
+        token_labels = []  # 1 is green, 0 is red
         tokens = []
         
-        # 使用父類方法分析單個 token
+        # Use parent class method to analyze single token
         self._analyze_sweet(encoded_text)
         
-        # 另外收集 token 序列和標記
+        # Collect token sequences and labels
         entropy_list = self.watermark.utils.calculate_entropy(
             self.watermark.config.generation_model, 
             encoded_text
@@ -717,19 +717,19 @@ class NGramWatermarkTokenAnalyzer(WatermarkTokenAnalyzer):
             curr_token = encoded_text[idx].item()
             tokens.append(curr_token)
             
-            # 獲取綠名單
+            # Get greenlist ID
             greenlist_ids = self.watermark.utils.get_greenlist_ids(encoded_text[:idx])
             
-            # 根據是否在綠名單中判斷
+            # Determine if it's in greenlist
             if curr_token in greenlist_ids:
-                token_labels.append(1)  # 綠字
+                token_labels.append(1)  # green
             else:
-                token_labels.append(0)  # 紅字
+                token_labels.append(0)  # red
         
-        # 分析連續 n 個 token 的 n-gram
+        # Analyze n-gram of consecutive n tokens
         for i in range(len(token_labels) - self.n + 1):
             ngram = tuple(tokens[i:i+self.n])
-            # n-gram 的標記：如果全部都是綠字，則為綠字n-gram，否則為紅字n-gram
+            # n-gram label: if all are green, then green n-gram, otherwise red n-gram
             ngram_label = 1 if all(label == 1 for label in token_labels[i:i+self.n]) else 0
             
             if ngram not in self.ngram_stats:
@@ -742,33 +742,33 @@ class NGramWatermarkTokenAnalyzer(WatermarkTokenAnalyzer):
     
     def _analyze_unigram_with_ngram(self, encoded_text: torch.LongTensor) -> None:
         """
-        分析Unigram水印文本中綠字和紅字，同時分析n-gram
+        Analyze green and red tokens in Unigram watermark text, and analyze n-gram
         
         Args:
-            encoded_text: 編碼後的文本張量
+            encoded_text: encoded text tensor
         """
-        # 標記每個位置是紅字還是綠字
-        token_labels = []  # 1 為綠字，0 為紅字
+        # Mark each position as red or green
+        token_labels = []  # 1 is green, 0 is red
         tokens = []
         
-        # 使用父類方法分析單個 token
+        # Use parent class method to analyze single token
         self._analyze_unigram(encoded_text)
         
-        # 另外收集 token 序列和標記
+        # Collect token sequences and labels
         for idx in range(len(encoded_text)):
             curr_token = encoded_text[idx].item()
             tokens.append(curr_token)
             
-            # 根據 mask 判斷
+            # Determine if it's in greenlist
             if self.utils.mask[curr_token]:
-                token_labels.append(1)  # 綠字
+                token_labels.append(1)  # green
             else:
-                token_labels.append(0)  # 紅字
+                token_labels.append(0)  # red
         
-        # 分析連續 n 個 token 的 n-gram
+        # Analyze n-gram of consecutive n tokens
         for i in range(len(token_labels) - self.n + 1):
             ngram = tuple(tokens[i:i+self.n])
-            # n-gram 的標記：如果全部都是綠字，則為綠字n-gram，否則為紅字n-gram
+            # n-gram label: if all are green, then green n-gram, otherwise red n-gram
             ngram_label = 1 if all(label == 1 for label in token_labels[i:i+self.n]) else 0
             
             if ngram not in self.ngram_stats:
@@ -781,23 +781,23 @@ class NGramWatermarkTokenAnalyzer(WatermarkTokenAnalyzer):
     
     def get_ngram_stats(self) -> List[Dict[str, Any]]:
         """
-        獲取 n-gram 統計資訊。
+        Get n-gram statistics.
         
         Returns:
-            List[Dict]: 包含每個 n-gram 的令牌序列、綠字次數和紅字次數的列表
+            List[Dict]: list of n-gram token sequences, green count, and red count
         """
         result = []
         for ngram, counts in self.ngram_stats.items():
             total_count = counts["green_count"] + counts["red_count"]
             
-            # 嘗試解碼 n-gram 顯示
+            # Try to decode n-gram
             try:
                 decoded_ngram = "".join([self.tokenizer.decode(token) for token in ngram])
             except:
-                decoded_ngram = "<無法解碼>"
+                decoded_ngram = "<cannot decode>"
                 
             result.append({
-                "ngram": list(ngram),  # 轉換為列表以便 JSON 序列化
+                "ngram": list(ngram),  # Convert to list for JSON serialization
                 "decoded": decoded_ngram,
                 "green_count": counts["green_count"],
                 "red_count": counts["red_count"],
@@ -805,16 +805,16 @@ class NGramWatermarkTokenAnalyzer(WatermarkTokenAnalyzer):
                 "green_ratio": counts["green_count"] / total_count if total_count > 0 else 0
             })
         
-        # 按總出現次數排序
+        # Sort by total count
         result.sort(key=lambda x: x["total_count"], reverse=True)
         return result
     
     def save_ngram_stats(self, save_path: str) -> None:
         """
-        保存 n-gram 統計到 JSON 文件。
+        Save n-gram statistics to JSON file.
         
         Args:
-            save_path: 保存路徑
+            save_path: save path
         """
         stats = self.get_ngram_stats()
         
@@ -825,11 +825,11 @@ class NGramWatermarkTokenAnalyzer(WatermarkTokenAnalyzer):
                 "ngram_stats": stats
             }, f, ensure_ascii=False, indent=2)
         
-        print(f"已保存 {len(stats)} 個 {self.n}-gram 的統計資訊到 {save_path}")
+        print(f"Saved {len(stats)} {self.n}-gram statistics to {save_path}")
     
     def clear_stats(self) -> None:
         """
-        清除所有統計資訊。
+        Clear all statistics.
         """
-        super().clear_stats()  # 清除父類的 token_stats
-        self.ngram_stats.clear()  # 清除 n-gram 統計
+        super().clear_stats()  # Clear parent class's token_stats
+        self.ngram_stats.clear()  # Clear n-gram statistics

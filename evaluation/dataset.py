@@ -143,68 +143,14 @@ class HumanEvalDataset(BaseDataset):
                 prompt += '\"\"\"'
 
             self.prompts.append(prompt)
-            # 為了支持 UnwatermarkedTextDetectionPipeline_V2，我們可以將 canonical_solution 作為 natural_text
-            # 這代表「人類寫的程式碼」，可以作為非水印文本的參考
+            # For UnwatermarkedTextDetectionPipeline_V2, we can use canonical_solution as natural_text
+            # This represents "human-written code", which can be used as a reference for non-watermarked text
             if 'canonical_solution' in item:
                 self.natural_texts.append(item['canonical_solution'])
             else:
                 print(f"No canonical solution found for {prompt}")
 
             self.references.append({'task': prompt, 'test': item['test'], 'entry_point': item['entry_point']})
-
-class TraditionalChineseDataset(BaseDataset):
-    """Dataset class for Traditional Chinese data."""
-
-    def __init__(self, data_source: str, tokenizer, max_samples: int = 200):
-        """
-        Initialize the Traditional Chinese dataset.
-
-        Parameters:
-            data_source (str): The path to the Traditional Chinese dataset file.
-            tokenizer: The tokenizer used to process prompts.
-        """
-        super().__init__(max_samples)
-        self.data_source = data_source
-        self.tokenizer = tokenizer  # 儲存 tokenizer
-        self.load_data()
-
-    def load_data(self):
-        with open(self.data_source, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        sys_prompt = "你是一個來自台灣的AI助理，你的名字是 TAIDE，樂於以台灣人的立場幫助使用者，會用繁體中文回答問題。"
-        for line in lines[:self.max_samples]:
-            item = json.loads(line)
-            chat = [
-                {"role": "system", "content": sys_prompt},
-                {"role": "user", "content": item['prompt']},
-            ]
-            prompt = self.tokenizer.apply_chat_template(chat, tokenize=False)
-            self.prompts.append(prompt)
-
-class ZHTWC4Dataset(BaseDataset):
-    """Dataset class for ZHTW dataset in normal JSON format."""
-
-    def __init__(self, data_source: str, tokenizer=None, max_samples: int = 100):
-        """
-            Initialize the ZHTW dataset from a JSON file.
-
-            Parameters:
-                data_source (str): The path to the ZHTW dataset file.
-                tokenizer: The tokenizer used to process prompts (optional).
-                max_samples: Maximum number of samples to load.
-        """ 
-        super().__init__(max_samples)
-        self.data_source = data_source
-        self.tokenizer = tokenizer
-        self.load_data()
-
-    def load_data(self):
-        with open(self.data_source, 'r', encoding='utf-8') as f:
-            data = json.load(f)  # 載入整個 JSON 文件
-        
-        for item in data[:self.max_samples]:
-            self.prompts.append(item['prompt'])
-            self.natural_texts.append(item['natural_text'])
 
 class MBPPDataset(BaseDataset):
     """Dataset class for MBPP (Mostly Basic Python Problems) dataset."""
@@ -229,15 +175,15 @@ class MBPPDataset(BaseDataset):
         for line in lines[:self.max_samples]:
             item = json.loads(line)
             
-            # 程式問題描述作為 prompt
+            # Program problem description as prompt
             self.prompts.append(item['text'])
             
-            # 程式碼解決方案作為 natural_text
-            # 處理 \r\n 換行符號，轉換為正常的 \n
+            # Program solution as natural_text
+            # Process \r\n line breaks, convert to normal \n
             code = item['code'].replace('\r\n', '\n').replace('\r', '\n')
             self.natural_texts.append(code)
             
-            # 可選：將測試資訊保存到 references 中，供後續評估使用
+            # Optional: save test information to references for later evaluation
             reference_data = {
                 'task_id': item['task_id'],
                 'text': item['text'],
@@ -255,7 +201,7 @@ if __name__ == '__main__':
     d3 = HumanEvalDataset('dataset/human_eval/test.jsonl', max_samples=100)
     d4 = MBPPDataset('dataset/mbpp/mbpp.jsonl', max_samples=1000)
 
-    # 獲取第一個問題
+    # Get the first question
     prompt = d4.get_prompt(30)  # "Write a function to find the minimum cost path..."
     natural_text = d4.get_natural_text(30)  # "R = 3\nC = 3\ndef min_cost(cost, m, n):..."
     reference = d4.get_reference(30)  # {'task_id': 1, 'text': '...', 'test_list': [...]}

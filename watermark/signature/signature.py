@@ -15,38 +15,38 @@ from watermark.unigram.unigram import Unigram
 class SignatureSetUtils:
     @staticmethod
     def load(file_path: str) -> Set[int]:
-        """從文件加載簽名集"""
+        """Load signature set from file"""
         try:
             with open(file_path, 'r') as f:
                 signature_set = set(json.load(f))
-            print(f"已從 {file_path} 加載 {len(signature_set)} 個簽名")
+            print(f"Loaded {len(signature_set)} signatures from {file_path}")
             return signature_set
         except FileNotFoundError:
-            raise FileNotFoundError(f"文件不存在: {file_path}")
+            raise FileNotFoundError(f"File not found: {file_path}")
         except json.JSONDecodeError as e:
-            raise json.JSONDecodeError(f"JSON 格式錯誤: {e.msg}", e.doc, e.pos)
+            raise json.JSONDecodeError(f"JSON format error: {e.msg}", e.doc, e.pos)
     
     @staticmethod
     def save(signature_set: Set[int], save_path: str) -> None:
-        """保存簽名集到文件"""
+        """Save signature set to file"""
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         with open(save_path, 'w') as f:
             json.dump(list(signature_set), f)
-        print(f"已保存 {len(signature_set)} 個簽名到 {save_path}")
+        print(f"Saved {len(signature_set)} signatures to {save_path}")
 
 class SignatureSetCollector:
     """
-    用於收集和管理簽名集合的工具類。
+    A utility class for collecting and managing signature sets.
     
-    收集生成式水印中的「紅字」tokens，用於後續檢測時提高準確性。
+    Collects "red" tokens from generative watermarking for later detection accuracy.
     """
     
     def __init__(self, watermark: Union[KGW, SWEET, Unigram]) -> None:
         """
-        初始化簽名收集器。
+        Initialize signature collector.
         
         Args:
-            watermark: 水印系統實例，用於獲取綠名單和其他信息
+            watermark: watermark system instance, used to get greenlist and other information
         """
         self.watermark = watermark
         self.signature_set: Set[int] = set()
@@ -56,13 +56,13 @@ class SignatureSetCollector:
         
     def collect_from_text(self, text: str) -> None:
         """
-        從單一文本收集紅字。
+        Collect red tokens from single text.
         
         Args:
-            text: 要分析的文本
+            text: text to analyze
         
         Raises:
-            NotImplementedError: 如果水印類型不支援
+            NotImplementedError: if watermark type is not supported
         """
         encoded_text = self.tokenizer(text, return_tensors="pt", add_special_tokens=False)["input_ids"][0].to(self.device)
         
@@ -73,94 +73,94 @@ class SignatureSetCollector:
         elif isinstance(self.watermark, Unigram):
             self._collect_from_unigram(encoded_text)
         else:
-            raise NotImplementedError(f"不支援的水印類型: {type(self.watermark).__name__}")
+            raise NotImplementedError(f"Unsupported watermark type: {type(self.watermark).__name__}")
     
     def _collect_from_kgw(self, encoded_text: torch.LongTensor) -> None:
         """
-        從 KGW 水印文本中收集紅字。
+        Collect red tokens from KGW watermark text.
         
         Args:
-            encoded_text: 編碼後的文本張量
+            encoded_text: encoded text tensor
         """
         for idx in range(self.prefix_length, len(encoded_text)):
             curr_token = encoded_text[idx].item()
-            # 獲取綠名單ID
+            # Get greenlist ID
             greenlist_ids = self.watermark.utils.get_greenlist_ids(encoded_text[:idx])
-            # 如果不在綠名單中，就是紅字，加入signature_set
+            # If not in greenlist, it's red, add to signature_set
             if curr_token not in greenlist_ids:
                 self.signature_set.add(curr_token)
     
     def _collect_from_sweet(self, encoded_text: torch.LongTensor) -> None:
         """
-        從 SWEET 水印文本中收集高熵紅字。
+        Collect high-entropy red tokens from SWEET watermark text.
         
         Args:
-            encoded_text: 編碼後的文本張量
+            encoded_text: encoded text tensor
         """
-        # 計算熵值
+        # Calculate entropy
         entropy_list = self.watermark.utils.calculate_entropy(
             self.watermark.config.generation_model, 
             encoded_text
         )
         
-        # 收集高熵紅字
+        # Collect high-entropy red tokens
         for idx in range(self.prefix_length, len(encoded_text)):
             curr_token = encoded_text[idx].item()
             
-            # 獲取綠名單
+            # Get greenlist ID
             greenlist_ids = self.watermark.utils.get_greenlist_ids(encoded_text[:idx])
             
-            # 檢查熵值是否高於閾值
+            # Check if entropy is higher than threshold
             is_high_entropy = entropy_list[idx] > self.watermark.config.entropy_threshold
             
-            # 如果不在綠名單中且熵值高，就是我們要收集的簽名
+            # If not in greenlist and entropy is high, it's the signature we want to collect
             if curr_token not in greenlist_ids and is_high_entropy:
                 self.signature_set.add(curr_token)
     
     def _collect_from_unigram(self, encoded_text: torch.LongTensor) -> None:
         """
-        從 Unigram 水印文本中收集紅字。
+        Collect red tokens from Unigram watermark text.
         
         Args:
-            encoded_text: 編碼後的文本張量
+            encoded_text: encoded text tensor
         """
         for idx in range(len(encoded_text)):
             curr_token = encoded_text[idx].item()
-            # 檢查是否在綠名單中（即 mask 值為 True）
+            # Check if in greenlist (i.e. mask value is True)
             if not self.watermark.utils.mask[curr_token]:
-                # 不在綠名單中，即為紅字，加入 signature_set
+                # If not in greenlist, it's red, add to signature_set
                 self.signature_set.add(curr_token)
     
     def collect_from_file(self, file_path: str) -> None:
         """
-        從文件讀取文本並收集簽名。
+        Collect signatures from file.
         
         Args:
-            file_path: 文本文件路徑
+            file_path: text file path
         
         Raises:
-            FileNotFoundError: 如果文件不存在
-            IOError: 如果讀取文件時出錯
+            FileNotFoundError: if file not found
+            IOError: if error reading file
         """
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 text = f.read()
             self.collect_from_text(text)
         except FileNotFoundError:
-            raise FileNotFoundError(f"文件不存在: {file_path}")
+            raise FileNotFoundError(f"File not found: {file_path}")
         except IOError as e:
-            raise IOError(f"讀取文件時出錯: {e}")
+            raise IOError(f"Error reading file: {e}")
     
     def save_signature_set(self, save_path: str) -> None:
-        """保存簽名集到文件"""
+        """Save signature set to file"""
         SignatureSetUtils.save(self.signature_set, save_path)
     
     def load_signature_set(self, file_path: str) -> None:
-        """從文件加載簽名集"""
+        """Load signature set from file"""
         self.signature_set = SignatureSetUtils.load(file_path)
 
 class KGWSignature(KGW):
-    """KGW水印的簽名感知版本，可在檢測時排除簽名集中的tokens。"""
+    """KGW watermark with signature awareness, can exclude tokens in signature set during detection."""
     
     def __init__(
         self, 
@@ -172,13 +172,13 @@ class KGWSignature(KGW):
         **kwargs
     ) -> None:
         """
-        初始化簽名感知的KGW水印。
+        Initialize KGW watermark with signature awareness.
         
         Args:
-            algorithm_config: 算法配置文件路徑或配置對象
-            transformers_config: Transformers配置
-            signature_set: 簽名集合
-            signature_file: 簽名文件路徑
+            algorithm_config: algorithm config file path or config object
+            transformers_config: Transformers config
+            signature_set: signature set
+            signature_file: signature file path
         """
         super().__init__(algorithm_config, transformers_config, *args, **kwargs)
         
@@ -189,27 +189,27 @@ class KGWSignature(KGW):
             self.load_signature_set(signature_file)
     
     def load_signature_set(self, file_path: str) -> None:
-        """從文件加載簽名集"""
+        """Load signature set from file"""
         self.signature_set = SignatureSetUtils.load(file_path)
     
     def save_signature_set(self, save_path: str) -> None:
-        """保存簽名集到文件"""
+        """Save signature set to file"""
         SignatureSetUtils.save(self.signature_set, save_path)
     
     def detect_watermark(self, text: str, return_dict: bool = True, *args, **kwargs) -> Union[Dict[str, Any], Tuple[bool, float]]:
         """
-        重寫偵測方法，考慮簽名集。
+        Override detection method, consider signature set.
         
         Args:
-            text: 要檢測的文本
-            return_dict: 是否返回字典格式的結果
+            text: text to detect
+            return_dict: whether to return dictionary format result
         
         Returns:
-            Union[Dict[str, Any], Tuple[bool, float]]: 檢測結果
+            Union[Dict[str, Any], Tuple[bool, float]]: detection result
         """
         encoded_text = self.config.generation_tokenizer(text, return_tensors="pt", add_special_tokens=False)["input_ids"][0].to(self.config.device)
         
-        # 過濾掉簽名集中的token
+        # Filter out tokens in signature set
         z_score, green_tokens = self.signature_score_sequence(encoded_text)
         
         is_watermarked = z_score > self.config.z_threshold
@@ -225,26 +225,26 @@ class KGWSignature(KGW):
     
     def signature_score_sequence(self, input_ids: torch.LongTensor) -> Tuple[float, List[int]]:
         """
-        考慮 signature 的評分方法，排除簽名集中的 tokens。
+        Consider signature scoring method, exclude tokens in signature set.
         
         Args:
-            input_ids: 編碼後的文本張量
+            input_ids: encoded text tensor
         
         Returns:
-            Tuple[float, List[int]]: z-score 值和綠色標記列表
+            Tuple[float, List[int]]: z-score and green token flags
         """
         valid_positions = []
         green_token_count = 0
         green_token_flags = [-1 for _ in range(self.config.prefix_length)]
         
-        filtered_count = 0  # 記錄被過濾的token數量
+        filtered_count = 0  # Record number of filtered tokens
         
         for idx in range(self.config.prefix_length, len(input_ids)):
             curr_token = input_ids[idx].item()
             
-            # 如果token在簽名集中，跳過
+            # If token in signature set, skip
             if curr_token in self.signature_set:
-                green_token_flags.append(-1)  # 標記為不計算
+                green_token_flags.append(-1)  # Mark as not counted
                 filtered_count += 1
                 continue
             
@@ -256,13 +256,13 @@ class KGWSignature(KGW):
             else:
                 green_token_flags.append(0)
         
-        # 計算實際評分的token數量
+        # Calculate number of tokens actually scored
         num_tokens_scored = len(valid_positions)
         print(f"signature N: {num_tokens_scored}, signature NG: {green_token_count}")
         if num_tokens_scored < 1:
-            return 0.0, green_token_flags  # 太少token無法評分
+            return 0.0, green_token_flags  # Too few tokens to score
         
-        # 使用 utils 的 _compute_z_score 函數計算 z-score
+        # Use utils' _compute_z_score function to calculate z-score
         z_score = self.utils._compute_z_score(green_token_count, num_tokens_scored)
         
         return z_score, green_token_flags
@@ -270,16 +270,16 @@ class KGWSignature(KGW):
     @property
     def signature_set_size(self) -> int:
         """
-        返回簽名集大小。
+        Return signature set size.
         
         Returns:
-            int: 簽名集中token的數量
+            int: number of tokens in signature set
         """
         return len(self.signature_set)
 
 
 class SweetSignature(SWEET):
-    """SWEET水印的簽名感知版本，可在檢測時排除簽名集中的tokens。"""
+    """SWEET watermark with signature awareness, can exclude tokens in signature set during detection."""
     
     def __init__(
         self, 
@@ -291,13 +291,13 @@ class SweetSignature(SWEET):
         **kwargs
     ) -> None:
         """
-        初始化簽名感知的SWEET水印。
+        Initialize SWEET watermark with signature awareness.
         
         Args:
-            algorithm_config: 算法配置文件路徑或配置對象
-            transformers_config: Transformers配置
-            signature_set: 簽名集合
-            signature_file: 簽名文件路徑
+            algorithm_config: algorithm config file path or config object
+            transformers_config: Transformers config
+            signature_set: signature set
+            signature_file: signature file path
         """
         super().__init__(algorithm_config, transformers_config, *args, **kwargs)
         
@@ -308,30 +308,30 @@ class SweetSignature(SWEET):
             self.load_signature_set(signature_file)
     
     def load_signature_set(self, file_path: str) -> None:
-        """從文件加載簽名集"""
+        """Load signature set from file"""
         self.signature_set = SignatureSetUtils.load(file_path)
     
     def save_signature_set(self, save_path: str) -> None:
-        """保存簽名集到文件"""
+        """Save signature set to file"""
         SignatureSetUtils.save(self.signature_set, save_path)
     
     def detect_watermark(self, text: str, return_dict: bool = True, *args, **kwargs) -> Union[Dict[str, Any], Tuple[bool, float]]:
         """
-        重寫偵測方法，考慮簽名集。
+        Override detection method, consider signature set.
         
         Args:
-            text: 要檢測的文本
-            return_dict: 是否返回字典格式的結果
+            text: text to detect
+            return_dict: whether to return dictionary format result
         
         Returns:
-            Union[Dict[str, Any], Tuple[bool, float]]: 檢測結果
+            Union[Dict[str, Any], Tuple[bool, float]]: detection result
         """
         encoded_text = self.config.generation_tokenizer(text, return_tensors="pt", add_special_tokens=False)["input_ids"][0].to(self.config.device)
         
-        # 計算熵值
+        # Calculate entropy
         entropy_list = self.utils.calculate_entropy(self.config.generation_model, encoded_text)
         
-        # 過濾掉簽名集中的token
+        # Filter out tokens in signature set
         z_score, green_tokens, weights = self.signature_score_sequence(encoded_text, entropy_list)
         
         is_watermarked = z_score > self.config.z_threshold
@@ -347,57 +347,57 @@ class SweetSignature(SWEET):
     
     def signature_score_sequence(self, input_ids: torch.LongTensor, entropy_list: List[float]) -> Tuple[float, List[int], List[int]]:
         """
-        考慮 signature 的評分方法，排除簽名集中的 tokens。
+        Consider signature scoring method, exclude tokens in signature set.
         
         Args:
-            input_ids: 編碼後的文本張量
+            input_ids: encoded text tensor
             entropy_list: 文本中每個token的熵值列表
         
         Returns:
-            Tuple[float, List[int], List[int]]: z-score 值、綠色標記列表和權重列表
+            Tuple[float, List[int], List[int]]: z-score, green token flags, and weights
         """
-        # 初始化標記列表
+        # Initialize token flags
         green_token_flags = [-1 for _ in range(self.config.prefix_length)]
         weights = [-1 for _ in range(self.config.prefix_length)]
         
-        # 處理每個 token
+        # Process each token
         valid_positions = []
         green_token_count = 0
         
         for idx in range(self.config.prefix_length, len(input_ids)):
             curr_token = input_ids[idx].item()
             
-            # 獲取綠名單
+            # Get greenlist ID
             greenlist_ids = self.utils.get_greenlist_ids(input_ids[:idx])
             
-            # 首先，根據熵值決定權重
-            # 這與原始邏輯一致：熵值高的設置為1，否則為0
+            # First, determine weight based on entropy
+            # This is consistent with the original logic: entropy high is 1, otherwise 0
             if entropy_list[idx] > self.config.entropy_threshold:
                 weights.append(1)
             else:
                 weights.append(0)
             
-            # 如果 token 在簽名集中，標記為 -1 並跳過評分
+            # If token in signature set, mark as -1 and skip scoring
             if curr_token in self.signature_set:
                 green_token_flags.append(-1)
-                weights[-1] = -1  # 在簽名集中的 token 權重設為 -1
+                weights[-1] = -1  # Weight of token in signature set is -1
                 continue
             
-            # 處理非簽名集中的 token
+            # Process non-signature set tokens
             if entropy_list[idx] > self.config.entropy_threshold:
                 valid_positions.append(idx)
                 
-                # 檢查是否在綠名單中
+                # Check if in greenlist
                 if curr_token in greenlist_ids:
                     green_token_flags.append(1)
                     green_token_count += 1
                 else:
                     green_token_flags.append(0)
             else:
-                # 熵值低的 token 不計入綠色標記統計
+                # Low entropy tokens are not counted in green token statistics
                 green_token_flags.append(-1)
         
-        # 計算 z-score
+        # Calculate z-score
         num_tokens_scored = len(valid_positions)
         print(f"signature N: {num_tokens_scored}, signature NG: {green_token_count}")
         if num_tokens_scored < 1:
@@ -409,16 +409,16 @@ class SweetSignature(SWEET):
     @property
     def signature_set_size(self) -> int:
         """
-        返回簽名集大小。
+        Return signature set size.
         
         Returns:
-            int: 簽名集中token的數量
+            int: number of tokens in signature set
         """
         return len(self.signature_set)
 
 
 class UnigramSignature(Unigram):
-    """Unigram水印的簽名感知版本，可在檢測時排除簽名集中的tokens。"""
+    """Unigram watermark with signature awareness, can exclude tokens in signature set during detection."""
     
     def __init__(
         self, 
@@ -430,13 +430,13 @@ class UnigramSignature(Unigram):
         **kwargs
     ) -> None:
         """
-        初始化簽名感知的Unigram水印。
+        Initialize Unigram watermark with signature awareness.
         
         Args:
-            algorithm_config: 算法配置文件路徑或配置對象
-            transformers_config: Transformers配置
-            signature_set: 簽名集合
-            signature_file: 簽名文件路徑
+            algorithm_config: algorithm config file path or config object
+            transformers_config: Transformers config
+            signature_set: signature set
+            signature_file: signature file path
         """
         super().__init__(algorithm_config, transformers_config, *args, **kwargs)
         
@@ -447,27 +447,27 @@ class UnigramSignature(Unigram):
             self.load_signature_set(signature_file)
     
     def load_signature_set(self, file_path: str) -> None:
-        """從文件加載簽名集"""
+        """Load signature set from file"""
         self.signature_set = SignatureSetUtils.load(file_path)
     
     def save_signature_set(self, save_path: str) -> None:
-        """保存簽名集到文件"""
+        """Save signature set to file"""
         SignatureSetUtils.save(self.signature_set, save_path)
     
     def detect_watermark(self, text: str, return_dict: bool = True, *args, **kwargs) -> Union[Dict[str, Any], Tuple[bool, float]]:
         """
-        重寫偵測方法，考慮簽名集。
+        Override detection method, consider signature set.
         
         Args:
-            text: 要檢測的文本
-            return_dict: 是否返回字典格式的結果
+            text: text to detect
+            return_dict: whether to return dictionary format result
         
         Returns:
-            Union[Dict[str, Any], Tuple[bool, float]]: 檢測結果
+            Union[Dict[str, Any], Tuple[bool, float]]: detection result
         """
         encoded_text = self.config.generation_tokenizer(text, return_tensors="pt", add_special_tokens=False)["input_ids"][0].to(self.config.device)
         
-        # 過濾掉簽名集中的token
+        # Filter out tokens in signature set
         z_score, green_tokens = self.signature_score_sequence(encoded_text)
         
         is_watermarked = z_score > self.config.z_threshold
@@ -483,26 +483,26 @@ class UnigramSignature(Unigram):
     
     def signature_score_sequence(self, input_ids: torch.LongTensor) -> Tuple[float, List[int]]:
         """
-        考慮 signature 的評分方法，排除簽名集中的 tokens。
+        Consider signature scoring method, exclude tokens in signature set.
         
         Args:
-            input_ids: 編碼後的文本張量
+            input_ids: encoded text tensor
         
         Returns:
-            Tuple[float, List[int]]: z-score 值和綠色標記列表
+            Tuple[float, List[int]]: z-score and green token flags
         """
         valid_positions = []
         green_token_count = 0
         green_token_flags = []
         
-        filtered_count = 0  # 記錄被過濾的token數量
+        filtered_count = 0  # Record number of filtered tokens
         
         for idx in range(len(input_ids)):
             curr_token = input_ids[idx].item()
             
-            # 如果token在簽名集中，跳過
+            # If token in signature set, skip
             if curr_token in self.signature_set:
-                green_token_flags.append(-1)  # 標記為不計算
+                green_token_flags.append(-1)  # Mark as not counted
                 filtered_count += 1
                 continue
             
@@ -513,13 +513,13 @@ class UnigramSignature(Unigram):
             else:
                 green_token_flags.append(0)
         
-        # 計算實際評分的token數量
+        # Calculate number of tokens actually scored
         num_tokens_scored = len(valid_positions)
         print(f"signature N: {num_tokens_scored}, signature NG: {green_token_count}")
         if num_tokens_scored < 1:
-            return 0.0, green_token_flags  # 太少token無法評分
+            return 0.0, green_token_flags  # Too few tokens to score
         
-        # 使用 utils 的 _compute_z_score 函數計算 z-score
+        # Use utils' _compute_z_score function to calculate z-score
         z_score = self.utils._compute_z_score(green_token_count, num_tokens_scored)
         
         return z_score, green_token_flags
@@ -527,15 +527,15 @@ class UnigramSignature(Unigram):
     @property
     def signature_set_size(self) -> int:
         """
-        返回簽名集大小。
+        Return signature set size.
         
         Returns:
-            int: 簽名集中token的數量
+            int: number of tokens in signature set
         """
         return len(self.signature_set)
     
 class EWDSignature(EWD):
-    """EWD水印的簽名感知版本，可在檢測時排除簽名集中的tokens。"""
+    """EWD watermark with signature awareness, can exclude tokens in signature set during detection."""
     
     def __init__(
         self, 
@@ -547,13 +547,13 @@ class EWDSignature(EWD):
         **kwargs
     ) -> None:
         """
-        初始化簽名感知的KGW水印。
+        Initialize KGW watermark with signature awareness.
         
         Args:
-            algorithm_config: 算法配置文件路徑或配置對象
-            transformers_config: Transformers配置
-            signature_set: 簽名集合
-            signature_file: 簽名文件路徑
+            algorithm_config: algorithm config file path or config object
+            transformers_config: Transformers config
+            signature_set: signature set
+            signature_file: signature file path
         """
         super().__init__(algorithm_config, transformers_config, *args, **kwargs)
         
@@ -564,27 +564,27 @@ class EWDSignature(EWD):
             self.load_signature_set(signature_file)
     
     def load_signature_set(self, file_path: str) -> None:
-        """從文件加載簽名集"""
+        """Load signature set from file"""
         self.signature_set = SignatureSetUtils.load(file_path)
     
     def save_signature_set(self, save_path: str) -> None:
-        """保存簽名集到文件"""
+        """Save signature set to file"""
         SignatureSetUtils.save(self.signature_set, save_path)
     
     def detect_watermark(self, text: str, return_dict: bool = True, *args, **kwargs) -> Union[Dict[str, Any], Tuple[bool, float]]:
         """
-        重寫偵測方法，考慮簽名集。
+        Override detection method, consider signature set.
         
         Args:
-            text: 要檢測的文本
-            return_dict: 是否返回字典格式的結果
+            text: text to detect
+            return_dict: whether to return dictionary format result
         
         Returns:
-            Union[Dict[str, Any], Tuple[bool, float]]: 檢測結果
+            Union[Dict[str, Any], Tuple[bool, float]]: detection result
         """
         encoded_text = self.config.generation_tokenizer(text, return_tensors="pt", add_special_tokens=False)["input_ids"][0].to(self.config.device)
         
-        # 過濾掉簽名集中的token
+        # Filter out tokens in signature set
         z_score, green_tokens = self.signature_score_sequence(encoded_text)
         
         is_watermarked = z_score > self.config.z_threshold
@@ -603,58 +603,58 @@ class EWDSignature(EWD):
         考慮 signature 的評分方法，排除簽名集中的 tokens。
         
         Args:
-            input_ids: 編碼後的文本張量
-            entropy_list: 文本中每個token的熵值列表
+            input_ids: encoded text tensor
+            entropy_list: entropy list of each token in text
         
         Returns:
-            Tuple[float, List[int], List[float]]: z-score 值、綠色標記列表和權重列表
+            Tuple[float, List[int], List[float]]: z-score, green token flags, and weights
         """
-        # 檢查是否有足夠的 tokens 進行評分
+        # Check if there are enough tokens to score
         num_tokens_scored = len(input_ids) - self.config.prefix_length
         if num_tokens_scored < 1:
-            return 0.0, [], []  # 太少 token 無法評分
+            return 0.0, [], []  # Too few tokens to score
         
-        # 初始化綠色標記列表
+        # Initialize green token flags
         green_token_flags = [-1 for _ in range(self.config.prefix_length)]
         
-        # 初始化權重列表
+        # Initialize weights
         weights = [-1 for _ in range(self.config.prefix_length)]
         
-        # 處理每個 token
+        # Process each token
         for idx in range(self.config.prefix_length, len(input_ids)):
             curr_token = input_ids[idx].item()
             
-            # 如果 token 在簽名集中，跳過
+            # If token in signature set, skip
             if curr_token in self.signature_set:
-                green_token_flags.append(-1)  # 標記為不計算
-                weights.append(-1)  # 權重也標記為不計算
+                green_token_flags.append(-1)  # Mark as not counted
+                weights.append(-1)  # Weight also marked as not counted
                 continue
             
-            # 獲取綠名單並判斷當前 token
+            # Get greenlist ID and determine current token
             greenlist_ids = self.utils.get_greenlist_ids(input_ids[:idx])
             if curr_token in greenlist_ids:
                 green_token_flags.append(1)
             else:
                 green_token_flags.append(0)
             
-            # 計算權重
+            # Calculate weight
             if idx >= self.config.prefix_length:
                 weights.append(entropy_list[idx])
         
-        # 過濾掉被標記為 -1 的位置
+        # Filter out positions marked as -1
         valid_weights = [w for w, f in zip(weights[self.config.prefix_length:], 
                                          green_token_flags[self.config.prefix_length:]) 
                         if f != -1]
         valid_flags = [f for f in green_token_flags[self.config.prefix_length:] 
                       if f != -1]
         
-        if not valid_weights:  # 如果沒有有效的權重
+        if not valid_weights:  # If there are no valid weights
             return 0.0, green_token_flags, weights
         
-        # 計算綠色 token 的加權計數
+        # Calculate weighted count of green tokens
         green_token_count = sum(w for w, f in zip(valid_weights, valid_flags) if f == 1)
         print(f"signature N: {len(valid_weights)}, signature NG: {green_token_count}")
-        # 使用 utils 的 _compute_z_score 函數計算 z-score
+        # Use utils' _compute_z_score function to calculate z-score
         z_score = self.utils._compute_z_score(green_token_count, valid_weights)
         
         return z_score, green_token_flags, weights
@@ -662,24 +662,24 @@ class EWDSignature(EWD):
     @property
     def signature_set_size(self) -> int:
         """
-        返回簽名集大小。
+        Return signature set size.
         
         Returns:
-            int: 簽名集中token的數量
+            int: number of tokens in signature set
         """
         return len(self.signature_set)
 
 class WatermarkTokenAnalyzer:
     """
-    分析水印文本中token的紅字和綠字次數。
+    Analyze red and green token counts in watermark text.
     """
     
     def __init__(self, watermark: Union[KGW, SWEET, Unigram]) -> None:
         """
-        初始化分析器。
+        Initialize analyzer.
         
         Args:
-            watermark: 水印系統實例，用於判斷綠字和紅字
+            watermark: watermark system instance, used to determine green and red tokens
         """
         self.watermark = watermark
         self.tokenizer = watermark.config.generation_tokenizer
@@ -691,10 +691,10 @@ class WatermarkTokenAnalyzer:
         
     def analyze_text(self, text: str) -> None:
         """
-        分析文本中每個token的綠字和紅字次數。
+        Analyze red and green token counts in each token of text.
         
         Args:
-            text: 水印文本
+            text: watermark text
         """
         encoded_text = self.tokenizer(text, return_tensors="pt", add_special_tokens=False)["input_ids"][0].to(self.device)
         
@@ -705,28 +705,28 @@ class WatermarkTokenAnalyzer:
         elif isinstance(self.watermark, Unigram):
             self._analyze_unigram(encoded_text)
         else:
-            raise NotImplementedError(f"不支援的水印類型: {type(self.watermark).__name__}")
+            raise NotImplementedError(f"Unsupported watermark type: {type(self.watermark).__name__}")
     
     def _analyze_kgw(self, encoded_text: torch.LongTensor) -> None:
-        """分析KGW水印文本中綠字和紅字"""
+        """Analyze green and red tokens in KGW watermark text"""
         for idx in range(self.prefix_length, len(encoded_text)):
             curr_token = encoded_text[idx].item()
             
-            # 獲取綠名單ID
+            # Get greenlist ID
             greenlist_ids = self.watermark.utils.get_greenlist_ids(encoded_text[:idx])
             
-            # 初始化或更新統計
+            # Initialize or update statistics
             if curr_token not in self.token_stats:
                 self.token_stats[curr_token] = {"green_count": 0, "red_count": 0}
             
-            # 根據是否在綠名單中更新計數
+            # Update count based on whether in greenlist
             if curr_token in greenlist_ids:
                 self.token_stats[curr_token]["green_count"] += 1
             else:
                 self.token_stats[curr_token]["red_count"] += 1
     
     def _analyze_sweet(self, encoded_text: torch.LongTensor) -> None:
-        """分析SWEET水印文本中綠字和紅字"""
+        """Analyze green and red tokens in SWEET watermark text"""
         entropy_list = self.watermark.utils.calculate_entropy(
             self.watermark.config.generation_model, 
             encoded_text
@@ -735,29 +735,29 @@ class WatermarkTokenAnalyzer:
         for idx in range(self.prefix_length, len(encoded_text)):
             curr_token = encoded_text[idx].item()
             
-            # 獲取綠名單
+            # Get greenlist ID
             greenlist_ids = self.watermark.utils.get_greenlist_ids(encoded_text[:idx])
             
-            # 初始化或更新統計
+            # Initialize or update statistics
             if curr_token not in self.token_stats:
                 self.token_stats[curr_token] = {"green_count": 0, "red_count": 0}
             
-            # 根據是否在綠名單中更新計數
+            # Update count based on whether in greenlist
             if curr_token in greenlist_ids:
                 self.token_stats[curr_token]["green_count"] += 1
             else:
                 self.token_stats[curr_token]["red_count"] += 1
     
     def _analyze_unigram(self, encoded_text: torch.LongTensor) -> None:
-        """分析Unigram水印文本中綠字和紅字"""
+        """Analyze green and red tokens in Unigram watermark text"""
         for idx in range(len(encoded_text)):
             curr_token = encoded_text[idx].item()
             
-            # 初始化或更新統計
+            # Initialize or update statistics
             if curr_token not in self.token_stats:
                 self.token_stats[curr_token] = {"green_count": 0, "red_count": 0}
             
-            # 根據是否在綠名單中更新計數（Unigram直接使用mask）
+            # Update count based on whether in greenlist (Unigram directly uses mask)
             if self.watermark.utils.mask[curr_token]:
                 self.token_stats[curr_token]["green_count"] += 1
             else:
@@ -765,32 +765,32 @@ class WatermarkTokenAnalyzer:
     
     def analyze_file(self, file_path: str) -> None:
         """
-        從文件讀取文本並分析。
+        Read text from file and analyze.
         
         Args:
-            file_path: 文本文件路徑
+            file_path: text file path
         """
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 text = f.read()
             self.analyze_text(text)
         except Exception as e:
-            print(f"分析文件時出錯: {e}")
+            print(f"Error analyzing file: {e}")
     
     def analyze_watermarked_texts_json(self, file_path: str, text_key: str = 'watermarked_text') -> None:
         """
-        從包含多個水印文本的JSON文件中分析token統計。
+        Analyze token statistics from JSON file containing multiple watermark texts.
         
         Args:
-            file_path: JSON文件路徑，每項應該包含水印文本
-            text_key: 水印文本的鍵名
+            file_path: JSON file path, each item should contain watermark text
+            text_key: key name of watermark text
         """
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
             if not isinstance(data, list):
-                print(f"錯誤: {file_path} 不是一個有效的文本列表")
+                print(f"Error: {file_path} is not a valid text list")
                 return
                 
             for entry in data:
@@ -798,19 +798,19 @@ class WatermarkTokenAnalyzer:
                     text = entry[text_key]
                     self.analyze_text(text)
                 else:
-                    print(f"警告: 找不到文本鍵 '{text_key}'")
+                    print(f"Warning: text key '{text_key}' not found")
                     
-            print(f"已分析 {len(data)} 個文本")
+            print(f"Analyzed {len(data)} texts")
         
         except Exception as e:
-            print(f"分析JSON文件時出錯: {e}")
+            print(f"Error analyzing JSON file: {e}")
     
     def get_token_stats(self) -> List[Dict[str, Any]]:
         """
-        獲取token統計資訊。
+        Get token statistics.
         
         Returns:
-            List[Dict]: 包含每個token的ID、綠字次數和紅字次數的列表
+            List[Dict]: list of token IDs, green counts, and red counts
         """
         result = []
         for token_id, counts in self.token_stats.items():
@@ -823,16 +823,16 @@ class WatermarkTokenAnalyzer:
                 "green_ratio": counts["green_count"] / total_count if total_count > 0 else 0
             })
         
-        # 按總出現次數排序
+        # Sort by total count
         result.sort(key=lambda x: x["total_count"], reverse=True)
         return result
     
     def save_stats(self, save_path: str) -> None:
         """
-        保存token統計到JSON文件。
+        Save token statistics to JSON file.
         
         Args:
-            save_path: 保存路徑
+            save_path: save path
         """
         stats = self.get_token_stats()
         
@@ -840,10 +840,10 @@ class WatermarkTokenAnalyzer:
         with open(save_path, 'w', encoding='utf-8') as f:
             json.dump(stats, f, ensure_ascii=False, indent=2)
         
-        print(f"已保存 {len(stats)} 個token的統計資訊到 {save_path}")
+        print(f"Saved {len(stats)} token statistics to {save_path}")
     
     def clear_stats(self) -> None:
         """
-        清除所有統計資訊。
+        Clear all statistics.
         """
         self.token_stats.clear()
