@@ -199,30 +199,30 @@ class WMTextDetectionPipeline(WatermarkedTextDetectionPipeline):
         return range(self.dataset.prompt_nums)
     
     def _load_watermarked_data(self, watermarked_texts_path: str):
-        """載入水印文本"""
+        """Load watermarked texts from file."""
         with open(watermarked_texts_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         return data
     
     def _get_generated_text(self, dataset_index, watermark):
-        """從載入的數據中獲取對應的水印文本"""
+        """Get watermarked text from loaded data."""
         prompt = self.dataset.get_prompt(dataset_index)
         data = self._load_watermarked_data(self.watermarked_texts_path)
         
-        # 查找匹配當前 prompt 的水印文本
+        # Find matching watermarked text for current prompt
         for item in data:
             if item["prompt"] == prompt:
                 return item["watermarked_text"]
         
-        # 如果找不到匹配的 prompt，返回空字符串或其他默認值
+        # If no matching prompt is found, return empty string or other default value
         return ""
 
     def _save_edited_text(self, prompts: list[str], edited_texts: list[str], output_dir: str):
-        """保存編輯後的文本"""
+        """Save edited texts."""
         os.makedirs(output_dir, exist_ok=True)
         output_file = os.path.join(output_dir, "edited_watermarked_texts.json")
         
-        # 構建與示例格式一致的數據結構
+        # Build data structure consistent with example format
         output_data = []
         for i, (prompt, text) in enumerate(zip(prompts, edited_texts)):
             output_data.append({
@@ -230,15 +230,15 @@ class WMTextDetectionPipeline(WatermarkedTextDetectionPipeline):
                 "watermarked_text": text
             })
         
-        # 保存為JSON格式
+        # Save as JSON format
         try:
             with open(output_file, "w", encoding="utf-8") as f:
                 json.dump(output_data, f, ensure_ascii=False, indent=2)
-            logging.info(f"已保存 {len(edited_texts)} 個水印文本到 {output_file}")
+            logging.info(f"Saved {len(edited_texts)} watermarked texts to {output_file}")
             return output_file
         except Exception as e:
-            logging.error(f"保存水印文本時出錯: {str(e)}")
-            print(f"保存水印文本失敗: {str(e)}")
+            logging.error(f"Error saving watermarked texts: {str(e)}")
+            print(f"Failed to save watermarked texts: {str(e)}")
             return ""
 
     def evaluate(self, watermark: BaseWatermark):
@@ -268,7 +268,7 @@ class WMTextDetectionPipeline(WatermarkedTextDetectionPipeline):
         
 
 class WatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
-    """用於處理和檢測帶水印文本的增強版 pipeline"""
+    """Enhanced pipeline for processing and detecting watermarked texts."""
 
     def __init__(
         self,
@@ -280,7 +280,7 @@ class WatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
         return_type: DetectionPipelineReturnType = DetectionPipelineReturnType.SCORES,
         extract_colors: bool = False,
         watermarked_texts_path: Optional[str] = None,
-        generation_mode: str = 'load',  # 'load' 或 'generate'
+        generation_mode: str = 'load',  # 'load' or 'generate'
         use_winmax: bool = False
     ) -> None:
         super().__init__(dataset, text_editor_list, show_progress, return_type, use_winmax)
@@ -296,46 +296,46 @@ class WatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
         return range(self.dataset.prompt_nums)
 
     def _load_watermarked_texts(self) -> List[Dict[str, str]]:
-        """從文件載入水印文本"""
+        """Load watermarked texts from file."""
         try:
             with open(self.watermarked_texts_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            logging.info(f"已載入 {len(data)} 個水印文本")
+            logging.info(f"Loaded {len(data)} watermarked texts")
             return data
         except Exception as e:
-            logging.error(f"載入水印文本時出錯: {str(e)}")
+            logging.error(f"Error loading watermarked texts: {str(e)}")
             raise
 
     def _generate_watermarked_text(self, prompt: str) -> str:
-        """生成帶水印的文本"""
+        """Generate watermarked text."""
         try:
             return self.watermark.generate_watermarked_text(prompt)
         except Exception as e:
-            logging.error(f"生成水印文本時出錯: {str(e)}")
+            logging.error(f"Error generating watermarked text: {str(e)}")
             return ""
 
     def _generate_or_retrieve_text(self, dataset_index: int, watermark: BaseWatermark = None) -> str:
-        """根據模式獲取水印文本"""
+        """Get watermarked text based on mode."""
         prompt = self.dataset.get_prompt(dataset_index)
         
         if self.generation_mode == 'load' and self.watermarked_texts_path:
-            # print(f"使用 load 模式，載入水印文本")
+            # print(f"Using load mode, load watermarked texts")
             data = self._load_watermarked_texts()
             for item in data:
                 if item["prompt"] == prompt:
                     return item["watermarked_text"]
-            print(f"找不到匹配的水印文本，將重新生成")
-            logging.warning(f"找不到匹配的水印文本，將重新生成")
+            print(f"No matching watermarked text found, will regenerate")
+            logging.warning(f"No matching watermarked text found, will regenerate")
             return self._generate_watermarked_text(prompt)
         else:
             return self._generate_watermarked_text(prompt)
 
     def _save_texts(self, texts: List[str], prompts: List[str]) -> str:
-        """保存水印文本"""
-        # 如果是 load 模式，不需要保存文本
+        """Save watermarked texts."""
+        # If load mode, no need to save texts
         if self.generation_mode == 'load':
-            print(f"使用 load 模式，跳過保存水印文本")
-            logging.info("使用 load 模式，跳過保存水印文本")
+            print(f"Using load mode, skip saving watermarked texts")
+            logging.info("Using load mode, skip saving watermarked texts")
             return ""
         
         output_file = os.path.join(self.output_dir, "watermarked_texts.json")
@@ -348,21 +348,21 @@ class WatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
         try:
             with open(output_file, "w", encoding="utf-8") as f:
                 json.dump(output_data, f, ensure_ascii=False, indent=2)
-            logging.info(f"已保存 {len(texts)} 個水印文本到 {output_file}")
+            logging.info(f"Saved {len(texts)} watermarked texts to {output_file}")
             return output_file
         except Exception as e:
-            logging.error(f"保存水印文本時出錯: {str(e)}")
+            logging.error(f"Error saving watermarked texts: {str(e)}")
             return ""
 
     def _extract_token_colors(self, text: str) -> List[Tuple]:
-        """提取文本中每個 token 的顏色信息"""
+        """Extract color information for each token in the text."""
         tokenizer = self.watermark.config.generation_tokenizer
         device = self.watermark.config.device
         
         encoded_text = tokenizer(text, return_tensors="pt", add_special_tokens=False)["input_ids"][0].to(device)
 
         if isinstance(self.watermark, EXP):
-            # 將 encoded_text 轉換為 numpy array，與 EXP detect_watermark 方法保持一致
+            # Convert encoded_text to numpy array, consistent with EXP detect_watermark method
             encoded_array = encoded_text.cpu().numpy()
             
             exp_scores = []
@@ -410,7 +410,7 @@ class WatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
         ]
 
     def _calculate_entropy(self, tokenized_text: torch.Tensor) -> List[float]:
-        """計算每個 token 的熵值"""
+        """Calculate entropy for each token."""
         with torch.no_grad():
             output = self.watermark.config.generation_model(
                 torch.unsqueeze(tokenized_text, 0),
@@ -423,7 +423,7 @@ class WatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
             return entropy[:-1]
 
     def _save_token_colors(self, texts: List[str]) -> str:
-        """保存 token 顏色信息"""
+        """Save token color information."""
         if not self.extract_colors:
             return ""
             
@@ -438,20 +438,20 @@ class WatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
                     "token_colors": token_colors
                 })
             except Exception as e:
-                logging.error(f"提取文本 {i+1} 的 token 顏色時出錯: {str(e)}")
+                logging.error(f"Error extracting token colors for text {i+1}: {str(e)}")
         
         try:
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(all_results, f, ensure_ascii=False, separators=(",", ":"))
-            logging.info(f"已保存 token 顏色信息到 {output_file}")
+            logging.info(f"Saved token color information to {output_file}")
             return output_file
         except Exception as e:
-            logging.error(f"保存 token 顏色時出錯: {str(e)}")
+            logging.error(f"Error saving token colors: {str(e)}")
             return ""
     
     @timer
     def evaluate(self) -> Union[List[WatermarkDetectionResult], List[float], List[bool]]:
-        """執行評估流程"""
+        """Execute evaluation process."""
         evaluation_results = []
         processed_texts = []
         prompts = []
@@ -461,20 +461,20 @@ class WatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
         print("========= watermarked text detection ==========")
         for index in bar:
             try:
-                # 獲取或生成文本
+                # Get or generate text
                 text = self._generate_or_retrieve_text(index)
                 if not text:
                     continue
                     
-                # 編輯文本
+                # Edit text
                 prompt = self.dataset.get_prompt(index)
                 unwatermarked_text = self.dataset.get_natural_text(index)
                 edited_text = self._edit_text(text, prompt, unwatermarked_text=unwatermarked_text)
                 
-                # 檢測水印
+                # Detect watermark
                 detect_result = self._detect_watermark(edited_text, self.watermark)
                 
-                # 保存結果
+                # Save results
                 evaluation_results.append(
                     WatermarkDetectionResult(text, edited_text, detect_result)
                 )
@@ -482,21 +482,21 @@ class WatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
                 prompts.append(prompt)
                 
                 if self.show_progress:
-                    print(f"檢測結果: {detect_result}")
+                    print(f"Detection result: {detect_result}")
                     print("-" * 60)
                     
             except Exception as e:
-                logging.error(f"處理文本 {index} 時出錯: {str(e)}")
+                logging.error(f"Error processing text {index}: {str(e)}")
                 continue
         print("========= watermarked text detection end ==========")
-        # 保存處理後的文本
+        # Save processed texts
         self._save_texts(processed_texts, prompts)
         
-        # 提取並保存 token 顏色
+        # Extract and save token colors
         if self.extract_colors:
             self._save_token_colors(processed_texts)
         
-        # 根據返回類型返回結果
+        # Return results based on return type
         if self.return_type == DetectionPipelineReturnType.FULL:
             return evaluation_results
         elif self.return_type == DetectionPipelineReturnType.SCORES:
@@ -507,7 +507,7 @@ class WatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
 
 
 class UnwatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
-    """用於處理和檢測無水印文本的增強版 pipeline"""
+    """Enhanced pipeline for processing and detecting unwatermarked texts."""
 
     def __init__(
         self,
@@ -518,10 +518,10 @@ class UnwatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
         show_progress: bool = True,
         return_type: DetectionPipelineReturnType = DetectionPipelineReturnType.SCORES,
         extract_colors: bool = False,
-        text_source_mode: str = 'natural',  # 'natural' 或 'generated'
+        text_source_mode: str = 'natural',  # 'natural' or 'generated'
         use_winmax: bool = False
     ) -> None:
-        # 驗證 text_source_mode
+        # Validate text_source_mode
         if text_source_mode not in ['natural', 'generated']:
             raise InvalidTextSourceModeError(text_source_mode)
             
@@ -540,14 +540,14 @@ class UnwatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
             return range(self.dataset.prompt_nums)
 
     def _extract_token_colors(self, text: str) -> List[Tuple]:
-        """提取文本中每個 token 的顏色信息"""
+        """Extract color information for each token in the text."""
         tokenizer = self.watermark.config.generation_tokenizer
         device = self.watermark.config.device
         
         encoded_text = tokenizer(text, return_tensors="pt", add_special_tokens=False)["input_ids"][0].to(device)
 
         if isinstance(self.watermark, EXP):
-            # 將 encoded_text 轉換為 numpy array，與 EXP detect_watermark 方法保持一致
+            # Convert encoded_text to numpy array, consistent with EXP detect_watermark method
             encoded_array = encoded_text.cpu().numpy()
             
             exp_scores = []
@@ -595,7 +595,7 @@ class UnwatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
         ]
 
     def _calculate_entropy(self, tokenized_text: torch.Tensor) -> List[float]:
-        """計算每個 token 的熵值"""
+        """Calculate entropy for each token."""
         with torch.no_grad():
             output = self.watermark.config.generation_model(
                 torch.unsqueeze(tokenized_text, 0),
@@ -608,7 +608,7 @@ class UnwatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
             return entropy[:-1]
 
     def _save_token_colors(self, texts: List[str]) -> str:
-        """保存 token 顏色信息"""
+        """Save token color information."""
         if not self.extract_colors:
             return ""
             
@@ -623,15 +623,15 @@ class UnwatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
                     "token_colors": token_colors
                 })
             except Exception as e:
-                logging.error(f"提取文本 {i+1} 的 token 顏色時出錯: {str(e)}")
+                logging.error(f"Error extracting token colors for text {i+1}: {str(e)}")
         
         try:
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(all_results, f, ensure_ascii=False, separators=(",", ":"))
-            logging.info(f"已保存 token 顏色信息到 {output_file}")
+            logging.info(f"Saved token color information to {output_file}")
             return output_file
         except Exception as e:
-            logging.error(f"保存 token 顏色時出錯: {str(e)}")
+            logging.error(f"Error saving token colors: {str(e)}")
             return ""
 
     def _generate_or_retrieve_text(self, dataset_index, watermark):
@@ -643,7 +643,7 @@ class UnwatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
             return watermark.generate_unwatermarked_text(prompt)
 
     def evaluate(self) -> Union[List[WatermarkDetectionResult], List[float], List[bool]]:
-        """執行評估流程"""
+        """Execute evaluation process."""
         evaluation_results = []
         processed_texts = []
         
@@ -652,37 +652,37 @@ class UnwatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
         print("========= unwatermarked text detection ==========")
         for index in bar:
             try:
-                # 獲取文本
+                # Get text
                 text = self._generate_or_retrieve_text(index, self.watermark)
                 if not text:
                     continue
                     
-                # 編輯文本
+                # Edit text
                 prompt = self.dataset.get_prompt(index) if self.text_source_mode == 'generated' else None
                 edited_text = self._edit_text(text, prompt)
                 
-                # 檢測水印
+                # Detect watermark
                 detect_result = self._detect_watermark(edited_text, self.watermark)
                 
-                # 保存結果
+                # Save results
                 evaluation_results.append(
                     WatermarkDetectionResult(text, edited_text, detect_result)
                 )
                 processed_texts.append(edited_text)
                 
                 if self.show_progress:
-                    print(f"檢測結果: {detect_result}")
+                    print(f"Detection result: {detect_result}")
                     print("-" * 60)
                     
             except Exception as e:
-                logging.error(f"處理文本 {index} 時出錯: {str(e)}")
+                logging.error(f"Error processing text {index}: {str(e)}")
                 continue
         print("========= unwatermarked text detection end ==========")
-        # 提取並保存 token 顏色
+        # Extract and save token colors
         if self.extract_colors:
             self._save_token_colors(processed_texts)
         
-        # 根據返回類型返回結果
+        # Return results based on return type
         if self.return_type == DetectionPipelineReturnType.FULL:
             return evaluation_results
         elif self.return_type == DetectionPipelineReturnType.SCORES:
@@ -693,7 +693,7 @@ class UnwatermarkedTextDetectionPipeline_V2(WatermarkDetectionPipeline):
         
 
 class SignatureAwareWatermarkDetectionPipeline_V2(WatermarkedTextDetectionPipeline_V2):
-    """支援簽名感知的水印檢測管道 V2"""
+    """Support signature-aware watermark detection pipeline V2"""
     
     def __init__(
         self,
@@ -705,27 +705,27 @@ class SignatureAwareWatermarkDetectionPipeline_V2(WatermarkedTextDetectionPipeli
         return_type: DetectionPipelineReturnType = DetectionPipelineReturnType.SCORES,
         extract_colors: bool = False,
         watermarked_texts_path: Optional[str] = None,
-        generation_mode: str = 'load',  # 'load' 或 'generate'
+        generation_mode: str = 'load',  # 'load' or 'generate'
         signature_config: Optional[Dict] = None,
         custom_ngram_signature_set_path: Optional[str] = None,
     ) -> None:
         """
-        初始化簽名感知的水印檢測管道。
+        Initialize signature-aware watermark detection pipeline.
         
         Args:
-            dataset: 用於評估的數據集
-            watermark: 水印生成器
-            output_dir: 輸出目錄
-            text_editor_list: 文本編輯器列表
-            show_progress: 是否顯示進度條
-            return_type: 檢測結果的返回類型
-            extract_colors: 是否提取 token 顏色
-            watermarked_texts_path: 預加載的水印文本路徑
-            generation_mode: 生成模式 ('load' 或 'generate')
-            signature_config: 簽名配置，包含：
-                - use_ngram: 是否使用 n-gram
-                - n: n-gram 的 n 值（如果使用 n-gram）
-            custom_ngram_signature_set_path: n-gram 簽名集路徑
+            dataset: Dataset for evaluation
+            watermark: Watermark generator
+            output_dir: Output directory
+            text_editor_list: List of text editors
+            show_progress: Whether to show progress bar
+            return_type: Return type of detection results
+            extract_colors: Whether to extract token colors
+            watermarked_texts_path: Path to preloaded watermarked texts
+            generation_mode: Generation mode ('load' or 'generate')
+            signature_config: Signature configuration, including:
+                - use_ngram: Whether to use n-gram
+                - n: n-gram value (if using n-gram)
+            custom_ngram_signature_set_path: Path to custom n-gram signature set
         """
         super().__init__(
             dataset=dataset,
@@ -751,16 +751,16 @@ class SignatureAwareWatermarkDetectionPipeline_V2(WatermarkedTextDetectionPipeli
             self.ngram_signature_file = os.path.join(output_dir, f"ngram{self.signature_config['n']}_signature_set.json")
     
     def _setup_signature_detector(self, texts: List[str]) -> None:
-        """設置簽名檢測器"""
-        # 收集基本簽名
+        """Set up signature detector"""
+        # Collect basic signatures
         self.signature_collector = SignatureSetCollector(self.watermark)
-        logging.info("收集簽名集...")
-        print(f"收集簽名集...")
+        logging.info("Collecting signature set...")
+        print(f"Collecting signature set...")
         for text in texts:
             self.signature_collector.collect_from_text(text)
         self.signature_collector.save_signature_set(self.signature_file)
         
-        # 如果啟用 n-gram，收集 n-gram 簽名
+        # If n-gram is enabled, collect n-gram signatures
         if self.signature_config.get('use_ngram'):
             n = self.signature_config['n']
             if self.custom_ngram_signature_set_path and os.path.exists(self.custom_ngram_signature_set_path):
@@ -772,19 +772,19 @@ class SignatureAwareWatermarkDetectionPipeline_V2(WatermarkedTextDetectionPipeli
                 n = self.signature_config['n']
                 self.ngram_collector = NGramSignatureSetCollector(self.watermark, n=n)
                 
-                logging.info(f"收集 {n}-gram 簽名集...")
-                print(f"收集 {n}-gram 簽名集...")
+                logging.info(f"Collecting {n}-gram signature set...")
+                print(f"Collecting {n}-gram signature set...")
                 for text in texts:
                     self.ngram_collector.collect_from_text(text)
                 self.ngram_collector.save_ngram_signature_set(self.ngram_signature_file)
         
-        # 創建簽名檢測器
+        # Create signature detector
         self._create_signature_detector()
     
     def _create_signature_detector(self) -> None:
-        """創建簽名檢測器"""
+        """Create signature detector"""
         if self.signature_config.get('use_ngram'):
-            # 使用 n-gram 簽名檢測器
+            # Use n-gram signature detector
             if isinstance(self.watermark, KGW):
                 self.signature_detector = KGWNGramSignature(
                     algorithm_config=f'config/{self.watermark.__class__.__name__}.json',
@@ -809,9 +809,9 @@ class SignatureAwareWatermarkDetectionPipeline_V2(WatermarkedTextDetectionPipeli
                     n=self.signature_config['n'],
                     ngram_signature_set=self.ngram_collector.ngram_signature_set
                 )
-            # 可以添加其他水印類型的支援
+            # Can add support for other watermark types
         else:
-            # 使用基本簽名檢測器
+            # Use basic signature detector
             if isinstance(self.watermark, KGW):
                 self.signature_detector = KGWSignature(
                     algorithm_config=f'config/{self.watermark.__class__.__name__}.json',
@@ -830,14 +830,14 @@ class SignatureAwareWatermarkDetectionPipeline_V2(WatermarkedTextDetectionPipeli
                     transformers_config=self.watermark.config.transformers_config,
                     signature_set=self.signature_collector.signature_set
                 )
-            # 可以添加其他水印類型的支援
+            # Can add support for other watermark types
     
     def _compare_detection_results(self, text: str) -> Dict[str, Any]:
-        """比較標準水印和簽名水印的檢測結果"""
-        # 標準水印檢測
+        """Compare standard watermark and signature watermark detection results"""
+        # Standard watermark detection
         standard_result = self.watermark.detect_watermark(text)
         
-        # 簽名水印檢測
+        # Signature watermark detection
         signature_result = self.signature_detector.detect_watermark(text)
 
         detection_results = {
@@ -849,35 +849,35 @@ class SignatureAwareWatermarkDetectionPipeline_V2(WatermarkedTextDetectionPipeli
     
     @timer
     def evaluate(self) -> Union[List[WatermarkDetectionResult], List[float], List[bool]]:
-        """執行評估流程"""
+        """Execute evaluation process"""
         evaluation_results = []
         processed_texts = []
         prompts = []
         
         bar = self._get_progress_bar(self._get_iterable())
         
-        # 首先獲取所有文本
+        # First get all texts
         texts = []
         for index in bar:
             text = self._generate_or_retrieve_text(index)
             if text:
                 texts.append(text)
         
-        # 設置簽名檢測器
+        # Set up signature detector
         self._setup_signature_detector(texts)
         
         print("========= watermarked signature detection ==========")
-        # 進行檢測
+        # Perform detection
         for index, text in enumerate(texts):
             try:
-                # 編輯文本
+                # Edit text
                 prompt = self.dataset.get_prompt(index)
                 edited_text = self._edit_text(text, prompt)
                 
-                # 比較檢測結果
+                # Compare detection results
                 detection_results = self._compare_detection_results(edited_text)
                 
-                # 保存結果
+                # Save results
                 evaluation_results.append(
                     WatermarkDetectionResult(
                         text, 
@@ -896,14 +896,14 @@ class SignatureAwareWatermarkDetectionPipeline_V2(WatermarkedTextDetectionPipeli
                 logging.error(f"處理文本 {index} 時出錯: {str(e)}")
                 continue
         print("========= watermarked signature detection end ==========")
-        # 保存處理後的文本
+        # Save processed texts
         self._save_texts(processed_texts, prompts)
         
-        # 提取並保存 token 顏色
+        # Extract and save token colors
         if self.extract_colors:
             self._save_token_colors(processed_texts)
         
-        # 根據返回類型返回結果
+        # Return results based on return type
         if self.return_type == DetectionPipelineReturnType.FULL:
             return evaluation_results
         elif self.return_type == DetectionPipelineReturnType.SCORES:
@@ -913,7 +913,7 @@ class SignatureAwareWatermarkDetectionPipeline_V2(WatermarkedTextDetectionPipeli
 
 
 class SignatureAwareUnwatermarkedTextDetectionPipeline_V2(UnwatermarkedTextDetectionPipeline_V2):
-    """支援簽名感知的非水印文本檢測管道 V2"""
+    """Support signature-aware un-watermarked text detection pipeline V2"""
     
     def __init__(
         self,
@@ -924,28 +924,28 @@ class SignatureAwareUnwatermarkedTextDetectionPipeline_V2(UnwatermarkedTextDetec
         show_progress: bool = True,
         return_type: DetectionPipelineReturnType = DetectionPipelineReturnType.SCORES,
         extract_colors: bool = False,
-        text_source_mode: str = 'natural',  # 'natural' 或 'generated'
+        text_source_mode: str = 'natural',  # 'natural' or 'generated'
         signature_config: Optional[Dict] = None,
         custom_ngram_signature_set_path: Optional[str] = None,
     ) -> None:
         """
-        初始化簽名感知的非水印文本檢測管道。
+        Initialize signature-aware un-watermarked text detection pipeline.
         
         Args:
-            dataset: 用於評估的數據集
-            watermark: 水印生成器
-            output_dir: 輸出目錄
-            text_editor_list: 文本編輯器列表
-            show_progress: 是否顯示進度條
-            return_type: 檢測結果的返回類型
-            extract_colors: 是否提取 token 顏色
-            text_source_mode: 文本來源模式 ('natural' 或 'generated')
-            signature_config: 簽名配置，包含：
-                - use_ngram: 是否使用 n-gram
-                - n: n-gram 的 n 值（如果使用 n-gram）
-            custom_ngram_signature_set_path: n-gram 簽名集路徑
+            dataset: Dataset for evaluation
+            watermark: Watermark generator
+            output_dir: Output directory
+            text_editor_list: List of text editors
+            show_progress: Whether to show progress bar
+            return_type: Return type of detection results
+            extract_colors: Whether to extract token colors
+            text_source_mode: Text source mode ('natural' or 'generated')
+            signature_config: Signature configuration, including:
+                - use_ngram: Whether to use n-gram
+                - n: n-gram value (if using n-gram)
+            custom_ngram_signature_set_path: Path to n-gram signature set
         """
-        # 驗證 text_source_mode
+        # Validate text_source_mode
         if text_source_mode not in ['natural', 'generated']:
             raise InvalidTextSourceModeError(text_source_mode)
             
@@ -964,71 +964,71 @@ class SignatureAwareUnwatermarkedTextDetectionPipeline_V2(UnwatermarkedTextDetec
         self.signature_detector = None
         self.custom_ngram_signature_set_path = custom_ngram_signature_set_path
         
-        # 設置簽名相關路徑 - 使用與 SignatureAwareWatermarkDetectionPipeline_V2 相同的路徑
+        # Set up signature related paths - use the same path as SignatureAwareWatermarkDetectionPipeline_V2
         self.signature_file = os.path.join(output_dir, "signature_set.json")
         if self.signature_config.get('use_ngram'):
             self.ngram_signature_file = os.path.join(output_dir, f"ngram{self.signature_config['n']}_signature_set.json")
     
     def _load_signature_set(self) -> Dict:
-        """載入由 SignatureAwareWatermarkDetectionPipeline_V2 產生的簽名集"""
+        """Load signature set generated by SignatureAwareWatermarkDetectionPipeline_V2"""
         try:
             with open(self.signature_file, 'r', encoding='utf-8') as f:
                 signature_set = json.load(f)
-            logging.info(f"已載入簽名集: {self.signature_file}")
-            print(f"已載入簽名集: {self.signature_file}")
+            logging.info(f"Loaded signature set: {self.signature_file}")
+            print(f"Loaded signature set: {self.signature_file}")
             return signature_set
         except FileNotFoundError:
-            logging.error(f"找不到簽名集文件: {self.signature_file}")
-            print(f"找不到簽名集文件: {self.signature_file}")
+            logging.error(f"Signature set file not found: {self.signature_file}")
+            print(f"Signature set file not found: {self.signature_file}")
             return {}
     
     def _load_ngram_signature_set(self) -> Dict:
-        """載入由 SignatureAwareWatermarkDetectionPipeline_V2 產生的 n-gram 簽名集"""
+        """Load n-gram signature set generated by SignatureAwareWatermarkDetectionPipeline_V2"""
         if not self.signature_config.get('use_ngram'):
             return set()
         
         if self.custom_ngram_signature_set_path and os.path.exists(self.custom_ngram_signature_set_path):
             ngram_file_to_load = self.custom_ngram_signature_set_path
-            print(f"使用自訂 n-gram 簽名集: {ngram_file_to_load}")
+            print(f"Using custom n-gram signature set: {ngram_file_to_load}")
         elif os.path.exists(self.ngram_signature_file):
             ngram_file_to_load = self.ngram_signature_file
-            logging.info(f"載入預設 n-gram 簽名集: {ngram_file_to_load}")
-            print(f"載入預設 n-gram 簽名集: {ngram_file_to_load}")
+            logging.info(f"Loaded default n-gram signature set: {ngram_file_to_load}")
+            print(f"Loaded default n-gram signature set: {ngram_file_to_load}")
         else:
-            logging.error(f"找不到 n-gram 簽名集文件")
-            print(f"找不到 n-gram 簽名集文件")
+            logging.error(f"n-gram signature set file not found: {self.ngram_signature_file}")
+            print(f"n-gram signature set file not found: {self.ngram_signature_file}")
             return set()
         
         try:
             from watermark.signature.ngram import NGramSignatureSetUtils
             loaded_n, loaded_ngram_set = NGramSignatureSetUtils.load(ngram_file_to_load)
             
-            # 確認加載的 n 與配置中的 n 一致
+            # Check if loaded n matches the configured n
             configured_n = self.signature_config.get('n', 1)
             if loaded_n != configured_n:
                 print(f"Warning: Loaded n-gram set has n={loaded_n}, but configuration expects n={configured_n}")
             
-            logging.info(f"已載入 {len(loaded_ngram_set)} 個 {loaded_n}-gram 簽名: {self.ngram_signature_file}")
-            print(f"已載入 {len(loaded_ngram_set)} 個 {loaded_n}-gram 簽名: {self.ngram_signature_file}")
+            logging.info(f"Loaded {len(loaded_ngram_set)} {loaded_n}-gram signatures: {self.ngram_signature_file}")
+            print(f"Loaded {len(loaded_ngram_set)} {loaded_n}-gram signatures: {self.ngram_signature_file}")
             
-            return loaded_ngram_set  # 返回 Set[Tuple[int, ...]]
+            return loaded_ngram_set  # Return Set[Tuple[int, ...]]
         except FileNotFoundError:
-            logging.error(f"找不到 n-gram 簽名集文件: {self.ngram_signature_file}")
-            print(f"找不到 n-gram 簽名集文件: {self.ngram_signature_file}")
+            logging.error(f"n-gram signature set file not found: {self.ngram_signature_file}")
+            print(f"n-gram signature set file not found: {self.ngram_signature_file}")
             return set()
         except Exception as e:
-            logging.error(f"加載 n-gram 簽名集時出錯: {str(e)}")
+            logging.error(f"Error loading n-gram signature set: {str(e)}")
             return set()
     
     def _setup_signature_detector(self) -> None:
-        """設置簽名檢測器 - 使用已產生的簽名集"""
-        # 載入簽名集
+        """Set up signature detector - use the generated signature set"""
+        # Load signature set
         signature_set = self._load_signature_set()
         ngram_signature_set = self._load_ngram_signature_set()
         
-        # 創建簽名檢測器
+        # Create signature detector
         if self.signature_config.get('use_ngram'):
-            # 使用 n-gram 簽名檢測器
+            # Use n-gram signature detector
             if isinstance(self.watermark, KGW):
                 self.signature_detector = KGWNGramSignature(
                     algorithm_config=f'config/{self.watermark.__class__.__name__}.json',
@@ -1054,7 +1054,7 @@ class SignatureAwareUnwatermarkedTextDetectionPipeline_V2(UnwatermarkedTextDetec
                     ngram_signature_set=ngram_signature_set
                 )
         else:
-            # 使用基本簽名檢測器
+            # Use basic signature detector
             if isinstance(self.watermark, KGW):
                 self.signature_detector = KGWSignature(
                     algorithm_config=f'config/{self.watermark.__class__.__name__}.json',
@@ -1075,11 +1075,11 @@ class SignatureAwareUnwatermarkedTextDetectionPipeline_V2(UnwatermarkedTextDetec
                 )
     
     def _compare_detection_results(self, text: str) -> Dict[str, Any]:
-        """比較標準水印和簽名水印的檢測結果"""
-        # 標準水印檢測
+        """Compare standard watermark and signature watermark detection results"""
+        # Standard watermark detection
         standard_result = self.watermark.detect_watermark(text)
         
-        # 簽名水印檢測
+        # Signature watermark detection
         signature_result = self.signature_detector.detect_watermark(text)
 
         detection_results = {
@@ -1091,32 +1091,32 @@ class SignatureAwareUnwatermarkedTextDetectionPipeline_V2(UnwatermarkedTextDetec
     
     @timer
     def evaluate(self) -> Union[List[WatermarkDetectionResult], List[float], List[bool]]:
-        """執行評估流程"""
+        """Execute evaluation process"""
         evaluation_results = []
         processed_texts = []
         
-        # 首先設置簽名檢測器，使用已產生的簽名集
+        # First set up signature detector, use the generated signature set
         self._setup_signature_detector()
         
         bar = self._get_progress_bar(self._get_iterable())
 
         print("========= unwatermarked signature detection ==========")
-        # 進行檢測
+        # Perform detection
         for index in bar:
             try:
-                # 獲取文本
+                # Get text
                 text = self._generate_or_retrieve_text(index, self.watermark)
                 if not text:
                     continue
                     
-                # 編輯文本
+                # Edit text
                 prompt = self.dataset.get_prompt(index) if self.text_source_mode == 'generated' else None
                 edited_text = self._edit_text(text, prompt)
                 
-                # 比較檢測結果
+                # Compare detection results
                 detection_results = self._compare_detection_results(edited_text)
                 
-                # 保存結果
+                # Save results
                 evaluation_results.append(
                     WatermarkDetectionResult(
                         text, 
@@ -1127,18 +1127,18 @@ class SignatureAwareUnwatermarkedTextDetectionPipeline_V2(UnwatermarkedTextDetec
                 processed_texts.append(edited_text)
                 
                 if self.show_progress:
-                    print(f"檢測結果: {detection_results}")
+                    print(f"Detection results: {detection_results}")
                     print("-" * 60)
                     
             except Exception as e:
-                logging.error(f"處理文本 {index} 時出錯: {str(e)}")
+                logging.error(f"Error processing text {index}: {str(e)}")
                 continue
         print("========= unwatermarked signature detection end ==========")
-        # 提取並保存 token 顏色
+        # Extract and save token colors
         if self.extract_colors:
             self._save_token_colors(processed_texts)
         
-        # 根據返回類型返回結果
+        # Return results based on return type
         if self.return_type == DetectionPipelineReturnType.FULL:
             return evaluation_results
         elif self.return_type == DetectionPipelineReturnType.SCORES:

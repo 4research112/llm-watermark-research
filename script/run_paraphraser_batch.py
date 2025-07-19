@@ -1,54 +1,68 @@
+import functools
 import os
 import subprocess
 import shutil
 
+def call_counter(func):
+    @functools.wraps(func)
+    def helper(*args, **kwargs):
+        helper.calls += 1
+        print(helper.calls)
+        return func(*args, **kwargs)
+    helper.calls = 0
+    return helper
+
+@call_counter
 def run_command(cmd, output_file):
-    print(f"指令: {cmd}")
-    print(f"輸出: {output_file}")
+    print(f"Command: {cmd}")
+    print(f"Output: {output_file}")
     print("-" * 80)
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     with open(output_file, 'w') as f:
         subprocess.run(cmd, shell=True, stdout=f)
-    print(f"完成: {output_file}")
+    print(f"Done: {output_file}")
 
 def generate():
-    # model = "llama3.1"
-    model = 'opt1.3b'
-    algorithm = "SWEET"
-    max_samples = 5000
+    #model, model_name = 'llama3.1', 'meta-llama/Llama-3.1-8B-Instruct'
+    model, model_name = 'opt1.3', 'facebook/opt-1.3b'
+    algorithms = ["KGW"]
+    #algorithms = ["EXP"]
+    max_samples = 10000
     
     datasets = [
-        # ("dataset/zhtw/processed_zhtw_c4.json", "zhc4"),
         ("dataset/c4/processed_c4.json", "enc4")
+        #('dataset/mbpp/mbpp.jsonl', 'mbpp')
     ]
     
-    deltas = [2, 1, 0.8]
-    n_grams = [2]
-    # n_grams = [1, 2, 3, 4, 5]
+    deltas = [0.5]
     
-    for dataset_path, dataset_name in datasets:
+    for algorithm in algorithms:
+      for dataset_path, dataset_name in datasets:
         for delta in deltas:
-            for n in n_grams:
-                algorithm_lower = algorithm.lower()
-                output_dir = f"tables_data_{max_samples}/{model}/{algorithm_lower}/{dataset_name}_d{delta}/{n}-gram"
-                watermarked_texts_path = f"{output_dir}/watermarked_texts.json"
-                
-                cmd = (f"python3 script/paraphraser.py "
-                       f"--algorithm {algorithm} "
-                       f"--max_samples {max_samples} "
-                       f"--output_dir {output_dir} "
-                       f"--watermarked_texts_path {watermarked_texts_path} "
-                       f"--dataset {dataset_path} "
-                       f"--generation_mode=generate "
-                       f"--delta={delta} "
-                       f"--n={n}")
-                
-                output_file = f"{output_dir}/res.txt"
-                run_command(cmd, output_file)
+          algorithm_lower = algorithm.lower()
+          output_dir = f"data_{max_samples}/{model}/{algorithm_lower}/{dataset_name}_d{delta}"
+          watermarked_texts_path = f"{output_dir}/watermarked_texts.json"
+          
+          cmd = (f"python3 script/paraphraser1.py "
+                 f"--algorithm {algorithm} "
+                 f"--max_samples {max_samples} "
+                 f"--model_name {model_name} "
+                 f"--output_dir {output_dir} "
+                 f"--watermarked_texts_path {watermarked_texts_path} "
+                 f"--dataset {dataset_path} "
+                 f"--generation_mode generate")
+          
+          if algorithm == "EXP":
+            cmd += f" --temperature {delta}"
+          else:
+            cmd += f" --delta {delta}" 
+
+          output_file = f"{output_dir}/res.txt"
+          run_command(cmd, output_file)
 
 def detect():
     # model = "llama3.1"
-    model = 'opt1.3b'
+    model = 'opt1.3'
     algorithm = "Unigram"
     max_samples = 5000
     
@@ -66,9 +80,9 @@ def detect():
             for n in n_grams:
                 algorithm_lower = algorithm.lower()
                 output_dir = f"tables_data_{max_samples}/{model}/{algorithm_lower}/{dataset_name}_d{delta}/{n}-gram"
-                watermarked_texts_path = f"tables_data_{max_samples}/{model}/{algorithm_lower}/{dataset_name}_d{delta}/2-gram/watermarked_texts.json"
+                watermarked_texts_path = f"tables_data_{max_samples}/{model}/{algorithm_lower}/{dataset_name}_d{delta}/1-gram/watermarked_texts.json"
                 
-                cmd = (f"python3 script/paraphraser.py "
+                cmd = (f"python3 script/paraphraser1.py "
                        f"--algorithm {algorithm} "
                        f"--max_samples {max_samples} "
                        f"--output_dir {output_dir} "
@@ -80,46 +94,6 @@ def detect():
                 
                 output_file = f"{output_dir}/res.txt"
                 run_command(cmd, output_file)
-
-def move_watermarked_texts() -> None:
-    """將 watermarked_texts.json 從 tables_data_5000 目錄移動到 texts5000 目錄。
-    
-    保持相同的目錄結構: {model}/{algorithm_lower}/{dataset_name}_d{delta}/{n}-gram/
-    """
-    model = 'opt1.3b'
-    algorithms = ["kgw", "sweet", "unigram"]  # 根據你的算法設定
-    max_samples = 5000
-    
-    datasets = [
-        # ("enc4", "enc4")  # (dataset_name, dataset_name)
-        # 如果有其他 dataset 可以在這裡添加
-        ("mbpp", "mbpp")
-    ]
-    
-    deltas = [2, 1, 0.8, 0.5, 0.1]
-    
-    for algorithm in algorithms:
-        for dataset_name, _ in datasets:
-            for delta in deltas:
-                # 來源路徑
-                source_path = f"tables_data_{max_samples}/{model}/{algorithm}/{dataset_name}_d{delta}/2-gram/watermarked_texts.json"
-                
-                # 目標路徑
-                target_path = f"texts5000/{model}/{algorithm}/{dataset_name}_d{delta}/watermarked_texts.json"
-                
-                # 檢查來源文件是否存在
-                if os.path.exists(source_path):
-                    # 確保目標目錄存在
-                    os.makedirs(os.path.dirname(target_path), exist_ok=True)
-                    
-                    # 移動文件
-                    try:
-                        shutil.move(source_path, target_path)
-                        print(f"成功移動: {source_path} -> {target_path}")
-                    except Exception as e:
-                        print(f"移動失敗: {source_path} -> {target_path}, 錯誤: {e}")
-                else:
-                    print(f"來源文件不存在: {source_path}")
 
 def code_generation():
     # model = "llama3.1"
@@ -146,7 +120,7 @@ def code_generation():
                 output_dir = f"tables_data_{max_samples}/{model}/{algorithm_lower}/{dataset_name}_d{delta}"
                 watermarked_texts_path = f"{output_dir}/watermarked_texts.json"
                 
-                cmd = (f"python3 script/paraphraser.py "
+                cmd = (f"python3 script/paraphraser1.py "
                         f"--algorithm {algorithm} "
                         f"--max_samples {max_samples} "
                         f"--output_dir {output_dir} "
@@ -158,42 +132,66 @@ def code_generation():
                 output_file = f"{output_dir}/res.txt"
                 run_command(cmd, output_file)
 
-def exp_generate():
-    model = 'llama3.1'
-    algorithms = ["EXP"]
-    max_samples = 1000
+def attack():
+    # make sure use the robustness function in paraphraser1.py
     
-    datasets = [
-        ('dataset/c4/processed_c4.json', 'enc4')
-    ]   
+    model, model_name = 'llama3.1', 'meta-llama/Llama-3.1-8B-Instruct'
+    max_samples = 1000
+    algorithms = ["SWEET"]
+    #algorithms = ["EXP"]
+    attack_names = ['scramble', 'Word-D', 'Word-S', 'Word-S-Context', 'single-single']
+    #attack_names = ['single-single']
+    #attack_names = ['scramble']
 
-    temperatures = [0.3]
+    datasets = [
+        ('dataset/c4/processed_c4.json', 'enc4'),
+        #('dataset/mbpp/mbpp.jsonl', 'mbpp')
+    ]
+
+    # deltas = [1, 0.8, 0.5]
+    deltas = [1]
+
+    G_USE_WINMAX = True
+
+    winmax = 'winmax_' if G_USE_WINMAX else ''
 
     for dataset_path, dataset_name in datasets:
         for algorithm in algorithms:
-            for temperature in temperatures:
-                algorithm_lower = algorithm.lower()
-                output_dir = f"tables_data_{max_samples}/{model}/{algorithm_lower}/{dataset_name}_t{temperature}"
-                watermarked_texts_path = f"{output_dir}/watermarked_texts.json"
-                
-                cmd = (f"python3 script/paraphraser.py "
-                    f"--algorithm {algorithm} "
-                    f"--max_samples {max_samples} "
-                    f"--output_dir {output_dir} "
-                    f"--watermarked_texts_path {watermarked_texts_path} "
-                    f"--dataset {dataset_path} "
-                    f"--generation_mode=generate "
-                    f"--temperature={temperature}")
-                
-                output_file = f"{output_dir}/res.txt"
-                run_command(cmd, output_file)
+            for delta in deltas:
+                for attack_name in attack_names:
+                    algorithm_lower = algorithm.lower()
+                    output_dir = f"tables_data_{max_samples}_attack/{model}/{winmax}{algorithm_lower}/{dataset_name}_d{delta}/{attack_name.lower()}"
+                    watermarked_texts_path = f"tables_data_{max_samples}/{model}/{algorithm_lower}/{dataset_name}_d{delta}/watermarked_texts.json"
+                    
+
+                    cmd = (f"python3 script/paraphraser1.py "
+                        f"--algorithm {algorithm} "
+                        f"--max_samples {max_samples} "
+                        f"--output_dir {output_dir} "
+                        f"--watermarked_texts_path {watermarked_texts_path} "
+                        f"--dataset {dataset_path} "
+                        f"--generation_mode load "
+                        f"--model_name {model_name} "
+                        f"--attack {attack_name}")
+
+                    if algorithm == "EXP":
+                      cmd += f" --temperature {delta}"
+                    else:
+                      cmd += f" --delta {delta}" 
+
+                    if G_USE_WINMAX:
+                        cmd += " --use_winmax"
+                    
+                    output_file = f"{output_dir}/res.txt"
+                    run_command(cmd, output_file)
+
 
 def main():
-    # generate()
     # detect()
-    # move_watermarked_texts()
     # code_generation()
-    exp_generate()
+    generate()
+    #attack()
+
 
 if __name__ == "__main__":
     main() 

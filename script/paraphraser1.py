@@ -1,8 +1,6 @@
 import argparse
 from dataclasses import dataclass, field
 from typing import Optional, List
-from utils.model_loader import load_model_and_config
-from evaluation.tools.text_editor import TaideParaphraser
 from translate import Translator
 from evaluation.dataset import C4Dataset, ZHTWC4Dataset, HumanEvalDataset, MBPPDataset
 from watermark.auto_watermark import AutoWatermark
@@ -14,7 +12,6 @@ from evaluation.tools.text_editor import TruncatePromptTextEditor, WordDeletion,
 import torch
 import numpy as np
 import random
-from utils.timer import timer
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 # Setting random seed for reproducibility
@@ -30,55 +27,53 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 @dataclass
 class ExperimentParams:
-    """實驗參數配置"""
-    # 基本參數
+    
+    # Basic parameters
     algorithm_name: str
     max_samples: int
     output_dir: str
     dataset_path: str
-    # 模型選擇
+    # Model selection
     model_name: str = 'meta-llama/Llama-3.1-8B-Instruct'
-    # 水印參數
+    # Watermark parameters
     delta: float = 1.0
     temperature: float = 1.0
-    # 檔案路徑
+    # File paths
     watermarked_texts_path: Optional[str] = None
-    # 模式設定
+    # Mode settings
     generation_mode: str = "load"
-    # 攻擊參數
+    # Attack parameters
     attack_name: Optional[str] = None
     use_winmax: bool = False
     # n-gram signature config
     n: Optional[int] = None
-    # 其他參數
+    # Other parameters
     extract_colors: bool = True
     text_source_mode: str = "natural"
     
     def __post_init__(self):
-        """參數驗證"""
+        """Parameter validation"""
         if self.algorithm_name not in ['KGW', 'SWEET', 'Unigram', 'EXP']:
-            raise ValueError(f"不支援的算法: {self.algorithm_name}")
+            raise ValueError(f"Unsupported algorithm: {self.algorithm_name}")
         
         if self.generation_mode not in ['load', 'generate']:
-            raise ValueError(f"不支援的生成模式: {self.generation_mode}")
+            raise ValueError(f"Unsupported generation mode: {self.generation_mode}")
             
-        # 驗證模型名稱
         supported_models = [
             'meta-llama/Llama-3.1-8B-Instruct',
             'meta-llama/Llama-3.1-8B',
             'facebook/opt-1.3b',
-            'taide/Llama3-TAIDE-LX-8B-Chat-Alpha1'
         ]
         if self.model_name not in supported_models:
-            print(f"警告: 模型 {self.model_name} 可能不被支援，支援的模型: {supported_models}")
+            print(f"Warning: model {self.model_name} may not be supported, supported models: {supported_models}")
     
     @property
     def is_exp_algorithm(self) -> bool:
-        """是否為 EXP 算法"""
+        """Whether it's EXP algorithm"""
         return self.algorithm_name == 'EXP'
     
     def get_watermark_param(self) -> dict:
-        """獲取水印參數"""
+        """Get watermark parameters"""
         if self.is_exp_algorithm:
             return {'temperature': self.temperature}
         else:
@@ -106,33 +101,33 @@ class ExperimentParams:
 
 @dataclass
 class DatasetConfig:
-    """數據集配置"""
+    """Dataset configuration"""
     path: str
     tokenizer: object
     max_samples: int
     
     def create_dataset(self):
-        """根據路徑創建對應的數據集"""
+        """Create corresponding dataset based on path"""
         if 'zhtw' in self.path.lower():
-            print(f"使用 ZHTWC4Dataset 加載 {self.path}")
+            print(f"Using ZHTWC4Dataset to load {self.path}")
             return ZHTWC4Dataset(self.path, tokenizer=self.tokenizer, max_samples=self.max_samples)
         elif 'c4' in self.path.lower():
-            print(f"使用 C4Dataset 加載 {self.path}")
+            print(f"Using C4Dataset to load {self.path}")
             return C4Dataset(self.path, max_samples=self.max_samples)
         elif 'human_eval' in self.path.lower():
-            print(f"使用 HumanEvalDataset 加載 {self.path}")
+            print(f"Using HumanEvalDataset to load {self.path}")
             return HumanEvalDataset(self.path, max_samples=self.max_samples)
         elif 'mbpp' in self.path.lower():
-            print(f"使用 MBPPDataset 加載 {self.path}")
+            print(f"Using MBPPDataset to load {self.path}")
             return MBPPDataset(self.path, max_samples=self.max_samples)
         else:
-            raise ValueError(f"不支援的數據集類型: {self.path}")
+            raise ValueError(f"Unsupported dataset type: {self.path}")
 
 def get_transformes_config(model_name: str = 'meta-llama/Llama-3.1-8B-Instruct'):
-    """獲取 transformers 配置"""
-    print(f"使用模型: {model_name}")
+    """Get transformers configuration"""
+    print(f"Using model: {model_name}")
 
-    # OPT 模型配置
+    # OPT model configuration
     if model_name == 'facebook/opt-1.3b':
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
@@ -144,7 +139,7 @@ def get_transformes_config(model_name: str = 'meta-llama/Llama-3.1-8B-Instruct')
         tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=True)
         vocab_size = 50272
         
-    # Llama 和 TAIDE 模型配置
+    # Llama model configuration
     else:    
         nf4_config = BitsAndBytesConfig(
             load_in_4bit=True,
@@ -178,8 +173,8 @@ def get_transformes_config(model_name: str = 'meta-llama/Llama-3.1-8B-Instruct')
     return model, tokenizer, transformers_config
 
 def create_watermark(params: ExperimentParams, transformers_config):
-    """創建水印實例"""
-    print(f"初始化 {params.algorithm_name} 水印...")
+    """Create watermark instance"""
+    print(f"Initializing {params.algorithm_name} watermark...")
     
     watermark = AutoWatermark.load(
         algorithm_name=params.algorithm_name,
@@ -193,11 +188,11 @@ def create_watermark(params: ExperimentParams, transformers_config):
     else:
         print(f"delta: {watermark.config.delta}")
     
-    print(f"{params.algorithm_name} 水印初始化完成")
+    print(f"{params.algorithm_name} watermark initialized")
     return watermark
 
 def create_attack(params: ExperimentParams, tokenizer, transformers_config):
-    """創建攻擊實例"""
+    """Create attack instance"""
     if not params.attack_name:
         return None
         
@@ -229,53 +224,26 @@ def create_attack(params: ExperimentParams, tokenizer, transformers_config):
         'Translation': lambda: BackTranslationTextEditor(
             translate_to_intermediary=Translator(from_lang="en", to_lang="zh").translate,
             translate_to_source=Translator(from_lang="zh", to_lang="en").translate
-        ),
-        'Doc-P-Taide': lambda: _create_taide_attack(transformers_config)
+        )
     }
     
     if params.attack_name in attack_map:
         return attack_map[params.attack_name]()
     else:
-        raise ValueError(f"不支援的攻擊類型: {params.attack_name}")
-
-def _create_taide_attack(transformers_config):
-    """創建 TAIDE 改寫攻擊"""
-    nf4_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_use_double_quant=True,
-        bnb_4bit_compute_dtype=torch.bfloat16
-    )
-
-    model = AutoModelForCausalLM.from_pretrained(
-        'taide/Llama3-TAIDE-LX-8B-Chat-Alpha1',
-        device_map="auto",
-        torch_dtype=torch.bfloat16,
-        quantization_config=nf4_config,
-        low_cpu_mem_usage=True,
-        local_files_only=True
-    )
-    tokenizer = AutoTokenizer.from_pretrained('taide/Llama3-TAIDE-LX-8B-Chat-Alpha1', local_files_only=True)
-    
-    return TaideParaphraser(
-        tokenizer=tokenizer,
-        model=model,
-        transformers_config=transformers_config,
-        prompt='Please rewrite the following text: '
-    )
+        raise ValueError(f"Unsupported attack type: {params.attack_name}")
 
 def assess_detection(params: ExperimentParams):
-    """基本檢測實驗"""
+    """Basic detection experiment"""
     model, tokenizer, transformers_config = get_transformes_config(params.model_name)
     
-    # 創建數據集
+    # Create dataset
     dataset_config = DatasetConfig(params.dataset_path, tokenizer, params.max_samples)
     dataset = dataset_config.create_dataset()
     
-    # 創建水印
+    # Create watermark
     watermark = create_watermark(params, transformers_config)
     
-    # 創建 pipelines
+    # Create pipelines
     wm_pipeline = WatermarkedTextDetectionPipeline_V2(
         dataset=dataset,
         watermark=watermark,
@@ -297,7 +265,7 @@ def assess_detection(params: ExperimentParams):
         use_winmax=params.use_winmax
     )
     
-    # 執行評估
+    # Execute evaluation
     calculator = FundamentalSuccessRateCalculator(
         labels=['TPR', 'TNR', 'FPR', 'FNR', 'P', 'R', 'F1', 'ACC']
     )
@@ -311,21 +279,21 @@ def assess_detection(params: ExperimentParams):
     return metrics
 
 def assess_robustness_v2(params: ExperimentParams):
-    """魯棒性測試實驗"""
+    """Robustness test experiment"""
     model, tokenizer, transformers_config = get_transformes_config(params.model_name)
     
-    # 創建數據集
+    # Create dataset
     dataset_config = DatasetConfig(params.dataset_path, tokenizer, params.max_samples)
     dataset = dataset_config.create_dataset()
     
-    # 創建水印
+    # Create watermark
     watermark = create_watermark(params, transformers_config)
     
-    # 創建攻擊
+    # Create attack
     attack = create_attack(params, tokenizer, transformers_config)
     attack_list = [attack] if attack else []
     
-    # 創建 pipelines
+    # Create pipelines
     wm_pipeline = WatermarkedTextDetectionPipeline_V2(
         dataset=dataset,
         watermark=watermark,
@@ -338,7 +306,7 @@ def assess_robustness_v2(params: ExperimentParams):
         use_winmax=params.use_winmax
     )
     
-    # 如果攻擊是 k-t 或 single-single，則不對 unwm 使用攻擊
+    # If attack is k-t or single-single, don't apply attack to unwm
     if params.attack_name == 'k-t' or params.attack_name == 'single-single':
         attack_list = []
 
@@ -353,7 +321,7 @@ def assess_robustness_v2(params: ExperimentParams):
         use_winmax=params.use_winmax
     )
     
-    # 執行評估
+    # Execute evaluation
     calculator = FundamentalSuccessRateCalculator(
         labels=['TPR', 'TNR', 'FPR', 'FNR', 'P', 'R', 'F1', 'ACC']
     )
@@ -367,29 +335,29 @@ def assess_robustness_v2(params: ExperimentParams):
     return metrics
 
 def assess_signature_detection(params: ExperimentParams):
-    """簽名檢測實驗"""
+    """Signature detection experiment"""
     if params.is_exp_algorithm:
-        raise ValueError("EXP 算法不支援簽名檢測")
+        raise ValueError("EXP algorithm does not support signature detection")
     
     if params.n is None:
-        raise ValueError("簽名檢測需要指定 n 參數")
+        raise ValueError("Signature detection requires n parameter")
         
     model, tokenizer, transformers_config = get_transformes_config(params.model_name)
     
-    # 創建數據集
+    # Create dataset
     dataset_config = DatasetConfig(params.dataset_path, tokenizer, params.max_samples)
     dataset = dataset_config.create_dataset()
     
-    # 創建水印
+    # Create watermark
     watermark = create_watermark(params, transformers_config)
     
-    # 簽名配置
+    # Signature configuration
     signature_config = {
         'use_ngram': True,
         'n': params.n,
     }
     
-    # 創建 pipelines
+    # Create pipelines
     wm_signature_pipeline = SignatureAwareWatermarkDetectionPipeline_V2(
         dataset=dataset,
         watermark=watermark,
@@ -413,7 +381,7 @@ def assess_signature_detection(params: ExperimentParams):
         use_winmax=params.use_winmax
     )
     
-    # 執行評估
+    # Execute evaluation
     calculator = FundamentalSuccessRateCalculator(
         labels=['TPR', 'TNR', 'FPR', 'FNR', 'P', 'R', 'F1', 'ACC']
     )
@@ -425,41 +393,41 @@ def assess_signature_detection(params: ExperimentParams):
     
     print(f"signature metrics: {signature_metrics}")
 
-    print("========= 沒有 signature 的偵測 ==========")
-    # 標準檢測比較
+    print("========= no signature detection ==========")
+    # Standard detection comparison
     standard_metrics = assess_detection(params)
     print(f"standard metrics: {standard_metrics}")
     
     return signature_metrics, standard_metrics
 
 def assess_signature_robustness(params: ExperimentParams):
-    """簽名魯棒性實驗"""
+    """Signature robustness experiment"""
     if params.is_exp_algorithm:
-        raise ValueError("EXP 算法不支援簽名檢測")
+        raise ValueError("EXP algorithm does not support signature detection")
     
     if params.n is None:
-        raise ValueError("簽名魯棒性測試需要指定 n 參數")
+        raise ValueError("Signature robustness test requires n parameter")
         
     model, tokenizer, transformers_config = get_transformes_config(params.model_name)
     
-    # 創建數據集
+    # Create dataset
     dataset_config = DatasetConfig(params.dataset_path, tokenizer, params.max_samples)
     dataset = dataset_config.create_dataset()
     
-    # 創建水印
+    # Create watermark
     watermark = create_watermark(params, transformers_config)
     
-    # 創建攻擊
+    # Create attack
     attack = create_attack(params, tokenizer, transformers_config)
     attack_list = [attack] if attack else []
     
-    # 簽名配置
+    # Signature configuration
     signature_config = {
         'use_ngram': True,
         'n': params.n,
     }
     
-    # 創建 pipelines
+    # Create pipelines
     wm_signature_pipeline = SignatureAwareWatermarkDetectionPipeline_V2(
         dataset=dataset,
         text_editor_list=attack_list,
@@ -485,7 +453,7 @@ def assess_signature_robustness(params: ExperimentParams):
         use_winmax=params.use_winmax
     )
     
-    # 執行評估
+    # Execute evaluation
     calculator = FundamentalSuccessRateCalculator(
         labels=['TPR', 'TNR', 'FPR', 'FNR', 'P', 'R', 'F1', 'ACC']
     )
@@ -497,8 +465,8 @@ def assess_signature_robustness(params: ExperimentParams):
     
     print(f"signature metrics: {signature_metrics}")
 
-    print("========= 沒有 signature 的偵測 ==========")
-    # 標準魯棒性測試比較
+    print("========= no signature detection ==========")
+    # Standard robustness test comparison
     standard_metrics = assess_robustness_v2(params)
     print(f"standard metrics: {standard_metrics}")
     
@@ -506,24 +474,23 @@ def assess_signature_robustness(params: ExperimentParams):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--algorithm', type=str, default='SWEET')
+    parser.add_argument('--algorithm', type=str, default='KGW')
     parser.add_argument('--attack', type=str, default=None, choices=['Word-D', 'Word-S', 'Word-S-Context', 'scramble', 'single-single', 'k-t'])
-    parser.add_argument('--dataset', type=str, default='dataset/c4/processed_c4.json', help='數據集路徑')
+    parser.add_argument('--dataset', type=str, default='dataset/c4/processed_c4.json', help='dataset path')
     parser.add_argument('--max_samples', type=int, default=1)
-    parser.add_argument('--output_dir', type=str, default='meeting/sweet_scramble_winmax')
-    parser.add_argument('--watermarked_texts_path', type=str, default='texts1000/llama3.1/sweet/enc4_d1/watermarked_texts.json')
+    parser.add_argument('--output_dir', type=str, default='data_1000/llama3.1/kgw/enc4_d1')
+    parser.add_argument('--watermarked_texts_path', type=str, default='data_1000/llama3.1/kgw/enc4_d1/watermarked_texts.json')
     parser.add_argument('--delta', type=float, default=1.0)
     parser.add_argument('--generation_mode', type=str, default='load')
     parser.add_argument('--n', type=int, default=None, help='N-gram value for signature config')
     parser.add_argument('--temperature', type=float, default=1.0, help='Temperature for generation')
     parser.add_argument('--use_winmax', action='store_true', help='use winmax detection for kgw watermark')
     parser.add_argument('--model_name', type=str, default='meta-llama/Llama-3.1-8B-Instruct', 
-                        help='模型名稱',
+                        help='model name',
                         choices=[
                             'meta-llama/Llama-3.1-8B-Instruct',
                             'meta-llama/Llama-3.1-8B', 
                             'facebook/opt-1.3b',
-                            'taide/Llama3-TAIDE-LX-8B-Chat-Alpha1'
                         ])
     args = parser.parse_args()
 
@@ -542,7 +509,7 @@ if __name__ == '__main__':
         model_name=args.model_name
     )
     
-    print(f"實驗配置: \n {params}")
+    print(f"Experiment configuration: \n {params}")
 
     if not params.attack_name and not params.n:
         assess_detection(params)

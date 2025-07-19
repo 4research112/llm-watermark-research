@@ -19,7 +19,7 @@ def run_command(cmd, output_file):
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     with open(output_file, 'w') as f:
         subprocess.run(cmd, shell=True, stdout=f)
-    print(f"完成: {output_file}")
+    print(f"Done: {output_file}")
 
 def generate_all_texts():
     model = "llama3.1"
