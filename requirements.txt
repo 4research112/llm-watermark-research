@@ -13,3 +13,4 @@ sentence-transformers
 networkx
 translate
 tiktoken
+bitsandbytes

@@ -16,7 +16,7 @@ from script.paraphraser1 import (
 )
 
 def get_gpu_info():
-    """獲取 GPU 使用情況 - 簡化版"""
+    """Get GPU usage - simplified version"""
     try:
         result = subprocess.run(['nvidia-smi', '--query-gpu=memory.used,memory.total', '--format=csv,nounits,noheader'], 
                               capture_output=True, text=True, timeout=5)
@@ -26,23 +26,23 @@ def get_gpu_info():
                 used, total = map(int, lines[0].split(', '))
                 current_time = time.strftime('%H:%M:%S')
                 return f"[{current_time}] GPU: {used}MB / {total}MB ({used/total*100:.1f}%)"
-            return "無法取得 GPU 資訊"
+            return "Failed to get GPU information"
         else:
-            return "nvidia-smi 執行失敗"
+            return "nvidia-smi execution failed"
     except subprocess.TimeoutExpired:
-        return "nvidia-smi 超時"
+        return "nvidia-smi timeout"
     except FileNotFoundError:
-        return "未安裝 NVIDIA 驅動"
+        return "NVIDIA driver not installed"
     except Exception as e:
-        return f"錯誤: {str(e)}"
+        return f"Error: {str(e)}"
 
 def update_gpu_info():
-    """定時更新GPU資訊"""
+    """Update GPU information periodically"""
     return get_gpu_info()
 
 def generate_dynamic_output_dir(algorithm, model_name, dataset_path, max_samples, delta, temperature, n_gram):
-    """動態生成輸出目錄"""
-    # 自定義模型名稱簡化映射
+    """Generate dynamic output directory"""
+    # Custom model name mapping
     model_mapping = {
         'meta-llama/Llama-3.1-8B-Instruct': 'llama3.1',
         'meta-llama/Llama-3.1-8B': 'llama3.1',
@@ -51,28 +51,28 @@ def generate_dynamic_output_dir(algorithm, model_name, dataset_path, max_samples
     }
     model_short = model_mapping.get(model_name, model_name.split('/')[-1].lower())
     
-    # 提取數據集名稱並添加語言前綴
+    # Extract dataset name and add language prefix
     dataset_name = os.path.basename(dataset_path).replace('processed_', '').replace('.json', '')
     if dataset_name == 'c4':
         dataset_name = 'enc4'  # c4 -> enc4
     
-    # 算法名稱小寫
+    # Algorithm name lowercase
     algorithm_lower = algorithm.lower()
     
-    # 根據算法選擇參數部分
+    # Select parameters based on algorithm
     if algorithm.upper() == "EXP":
         param_part = f"t{temperature}"
     else:
         param_part = f"d{delta}"
     
-    # 組合路徑（移除 gram 部分）
+    # Combine path (remove gram part)
     output_dir = f"tables_data_{max_samples}/{model_short}/{algorithm_lower}/{dataset_name}_{param_part}"
     
     return output_dir
 
 def generate_watermarked_texts_path(model_name, algorithm, dataset_path, delta, temperature):
-    """動態生成水印文本路徑"""
-    # 自定義模型名稱簡化映射
+    """Generate dynamic watermark text path"""
+    # Custom model name mapping
     model_mapping = {
         'meta-llama/Llama-3.1-8B-Instruct': 'llama3.1',
         'meta-llama/Llama-3.1-8B': 'llama3.1', 
@@ -81,21 +81,21 @@ def generate_watermarked_texts_path(model_name, algorithm, dataset_path, delta, 
     }
     model_short = model_mapping.get(model_name, model_name.split('/')[-1].lower())
     
-    # 提取數據集名稱並添加語言前綴（與輸出目錄邏輯一致）
+    # Extract dataset name and add language prefix (consistent with output directory logic)
     dataset_name = os.path.basename(dataset_path).replace('processed_', '').replace('.json', '')
     if dataset_name == 'c4':
         dataset_name = 'enc4'  # c4 -> enc4
     
-    # 算法名稱小寫
+    # Algorithm name lowercase
     algorithm_lower = algorithm.lower()
     
-    # 根據算法選擇參數部分
+    # Select parameters based on algorithm
     if algorithm.upper() == "EXP":
         param_part = f"t{temperature}"
     else:
         param_part = f"d{delta}"
     
-    # 組合水印文本路徑（使用動態數據集名稱）
+    # Combine watermark text path (use dynamic dataset name)
     watermarked_path = f"texts1000/{model_short}/{algorithm_lower}/{dataset_name}_{param_part}/watermarked_texts.json"
     
     return watermarked_path
@@ -103,10 +103,10 @@ def generate_watermarked_texts_path(model_name, algorithm, dataset_path, delta, 
 def generate_python_command(experiment_type, algorithm, model_name, dataset_path, max_samples, 
                           watermarked_texts_path, generation_mode, delta, temperature, 
                           attack_type, use_winmax, n_gram, output_dir):
-    """生成對應的 Python 命令"""
+    """Generate corresponding Python command"""
     cmd_parts = ["python3", "script/paraphraser1.py"]
     
-    # 基本參數
+    # Basic parameters
     cmd_parts.extend([
         "--algorithm", algorithm,
         "--dataset", dataset_path,
@@ -116,25 +116,25 @@ def generate_python_command(experiment_type, algorithm, model_name, dataset_path
         "--generation_mode", generation_mode
     ])
     
-    # 水印文本路徑
+    # Watermark text path
     if watermarked_texts_path.strip():
         cmd_parts.extend(["--watermarked_texts_path", watermarked_texts_path])
     
-    # 算法特定參數
+    # Algorithm specific parameters
     if algorithm.upper() == "EXP":
         cmd_parts.extend(["--temperature", str(temperature)])
     else:
         cmd_parts.extend(["--delta", str(delta)])
     
-    # 攻擊參數
+    # Attack parameters
     if experiment_type in ["watermark_robustness", "watermark_signature_robustness"] and attack_type:
         cmd_parts.extend(["--attack", attack_type])
     
-    # WinMax 參數
+    # WinMax parameters
     if use_winmax:
         cmd_parts.append("--use_winmax")
     
-    # N-gram 參數
+    # N-gram parameters
     if experiment_type in ["watermark_signature", "watermark_signature_robustness"]:
         cmd_parts.extend(["--n", str(n_gram)])
     
@@ -146,9 +146,9 @@ def run_experiment(experiment_type, algorithm, model_name, dataset_path, max_sam
                   watermarked_texts_path, generation_mode, delta, temperature, 
                   attack_type, use_winmax, n_gram, progress=gr.Progress()):
     
-    progress(0, desc="初始化實驗...")
+    progress(0, desc="Initializing experiment...")
     
-    # 使用動態生成的輸出目錄和水印文本路徑
+    # Use dynamic generated output directory and watermark text path
     dynamic_output_dir = generate_dynamic_output_dir(
         algorithm, model_name, dataset_path, max_samples, delta, temperature, n_gram
     )
@@ -157,13 +157,13 @@ def run_experiment(experiment_type, algorithm, model_name, dataset_path, max_sam
         model_name, algorithm, dataset_path, delta, temperature
     )
     
-    # 創建 ExperimentParams 對象
+    # Create ExperimentParams object
     params = ExperimentParams(
         algorithm_name=algorithm,
         max_samples=max_samples,
         output_dir=dynamic_output_dir,
         dataset_path=dataset_path,
-        watermarked_texts_path=dynamic_watermarked_path,  # 使用動態生成的水印文本路徑
+        watermarked_texts_path=dynamic_watermarked_path,  # Use dynamic generated watermark text path
         generation_mode=generation_mode,
         delta=delta,
         temperature=temperature,
@@ -173,15 +173,15 @@ def run_experiment(experiment_type, algorithm, model_name, dataset_path, max_sam
         model_name=model_name
     )
     
-    # 確保輸出目錄存在
+    # Ensure output directory exists
     os.makedirs(dynamic_output_dir, exist_ok=True)
     res_file_path = os.path.join(dynamic_output_dir, "res.txt")
     
-    # 捕獲輸出
+    # Capture output
     output_buffer = io.StringIO()
     
     try:
-        progress(0.3, desc="執行實驗中...")
+        progress(0.3, desc="Executing experiment...")
         
         with contextlib.redirect_stdout(output_buffer):
             if experiment_type == "watermark":
@@ -193,27 +193,27 @@ def run_experiment(experiment_type, algorithm, model_name, dataset_path, max_sam
             elif experiment_type == "watermark_signature_robustness":
                 assess_signature_robustness(params)
         
-        progress(1.0, desc="實驗完成!")
+        progress(1.0, desc="Experiment completed!")
         
         output_text = output_buffer.getvalue()
         
-        # 保存輸出到文件
+        # Save output to file
         try:
             with open(res_file_path, 'w', encoding='utf-8') as f:
-                f.write(f"=== 水印實驗結果 ===\n")
-                f.write(f"實驗類型: {experiment_type}\n")
-                f.write(f"算法: {algorithm}\n")
-                f.write(f"模型: {model_name}\n")
+                f.write(f"=== Watermark experiment results ===\n")
+                f.write(f"Experiment type: {experiment_type}\n")
+                f.write(f"Algorithm: {algorithm}\n")
+                f.write(f"Model: {model_name}\n")
                 f.write(f"使用 WinMax: {use_winmax}\n")
                 f.write("=" * 50 + "\n\n")
                 f.write(output_text)
-            print(f"實驗結果已保存到: {res_file_path}")
+            print(f"Experiment results saved to: {res_file_path}")
         except Exception as save_error:
-            print(f"保存文件失敗: {save_error}")
+            print(f"Failed to save file: {save_error}")
             
-        output_text = f"實驗完成\n結果已保存到: {res_file_path}\n\n{output_text}"
+        output_text = f"Experiment completed\nResults saved to: {res_file_path}\n\n{output_text}"
         
-        # 創建參數顯示字典
+        # Create parameter display dictionary
         params_dict = {
             'algorithm_name': params.algorithm_name,
             'model_name': params.model_name,
@@ -232,29 +232,29 @@ def run_experiment(experiment_type, algorithm, model_name, dataset_path, max_sam
         return output_text, json.dumps(params_dict, indent=2, ensure_ascii=False)
         
     except Exception as e:
-        progress(1.0, desc="實驗失敗")
-        return f"實驗失敗: {str(e)}", ""
+        progress(1.0, desc="Experiment failed")
+        return f"Experiment failed: {str(e)}", ""
 
 def update_interface_and_paths(experiment_type, algorithm, model_name, dataset_path, max_samples, 
                               watermarked_texts_path, generation_mode, delta, temperature, 
                               attack_type, use_winmax, n_gram):
-    # 根據實驗類型顯示相關組件
+    # Show related components based on experiment type
     show_attack = experiment_type in ["watermark_robustness"]
-    show_signature = False  # 移除簽名相關功能
+    show_signature = False  # Remove signature-related features
     show_winmax = True  
-    show_watermarked_path = True  # 總是顯示
+    show_watermarked_path = True  # Always show
     
-    # 動態生成輸出目錄
+    # Generate dynamic output directory
     dynamic_output_dir = generate_dynamic_output_dir(
         algorithm, model_name, dataset_path, max_samples, delta, temperature, n_gram
     )
     
-    # 動態生成水印文本路徑
+    # Generate dynamic watermark text path
     dynamic_watermarked_path = generate_watermarked_texts_path(
         model_name, algorithm, dataset_path, delta, temperature
     )
     
-    # 生成 Python 命令
+    # Generate Python command
     python_cmd = generate_python_command(
         experiment_type, algorithm, model_name, dataset_path, max_samples,
         dynamic_watermarked_path, generation_mode, delta, temperature,
@@ -271,23 +271,23 @@ def update_interface_and_paths(experiment_type, algorithm, model_name, dataset_p
         gr.update(value=python_cmd)  # python_command
     ]
 
-# 創建 Gradio 界面
-with gr.Blocks(title="水印實驗系統", theme=gr.themes.Soft()) as demo:
+# Create Gradio interface
+with gr.Blocks(title="Watermark experiment system", theme=gr.themes.Soft()) as demo:
     gr.Markdown("Demo pages for watermark experiment")
     
     with gr.Row():
         with gr.Column(scale=1):
-            gr.Markdown("## 實驗設定")
+            gr.Markdown("## Experiment settings")
             
             experiment_type = gr.Dropdown(
                 choices=["watermark", "watermark_robustness"],
-                label="實驗類型",
+                label="Experiment type",
                 value="watermark"
             )
             
             algorithm = gr.Dropdown(
                 choices=["KGW", "SWEET", "Unigram", "EXP"],
-                label="水印演算法",
+                label="Watermark algorithm",
                 value="KGW"
             )
             
@@ -298,7 +298,7 @@ with gr.Blocks(title="水印實驗系統", theme=gr.themes.Soft()) as demo:
                     "meta-llama/Llama-3.1-8B",
                     "taide/Llama3-TAIDE-LX-8B-Chat-Alpha1"
                 ],
-                label="模型選擇",
+                label="Model selection",
                 value="meta-llama/Llama-3.1-8B-Instruct"
             )
             
@@ -309,33 +309,33 @@ with gr.Blocks(title="水印實驗系統", theme=gr.themes.Soft()) as demo:
                     "dataset/human_eval/processed_human_eval.json",
                     "dataset/mbpp/processed_mbpp.json"
                 ],
-                label="資料集",
+                label="Dataset",
                 value="dataset/c4/processed_c4.json"
             )
             
             max_samples = gr.Number(
-                label="樣本數量",
+                label="Sample number",
                 value=1,
                 minimum=1,
                 maximum=5000
             )
             
             output_dir = gr.Textbox(
-                label="輸出目錄 (動態生成)",
+                label="Output directory (dynamic generation)",
                 value="meeting/gradio",
-                info="根據參數自動生成路徑"
+                info="Path generated automatically based on parameters"
             )
             
-            # 動態顯示的組件
+            # Dynamic display components
             watermarked_texts_path = gr.Textbox(
-                label="水印文本路徑 (動態生成)",
+                label="Watermark text path (dynamic generation)",
                 value="texts1000/llama3.1/kgw/enc4_d1.0/watermarked_texts.json",
-                info="根據模型和算法參數自動生成"
+                info="Path generated automatically based on model and algorithm parameters"
             )
             
             generation_mode = gr.Dropdown(
                 choices=["load", "generate"],
-                label="生成模式",
+                label="Generation mode",
                 value="load"
             )
             
@@ -356,61 +356,61 @@ with gr.Blocks(title="水印實驗系統", theme=gr.themes.Soft()) as demo:
                     step=0.1
                 )
             
-            # 條件顯示組件
+            # Conditional display components
             attack_type = gr.Dropdown(
                 choices=["Word-D", "Word-S", "Word-S-Context", "scramble", 
                         "single-single", "k-t"],
-                label="攻擊類型",
+                label="Attack type",
                 value="Word-D",
                 visible=False
             )
             
             use_winmax = gr.Checkbox(
-                label="使用 WinMax 檢測",
+                label="Use WinMax detection",
                 value=False,
                 visible=True,
-                info="增強型檢測模式，支援 KGW、SWEET、Unigram、EXP 水印算法"
+                info="Enhanced detection mode, supports KGW, SWEET, Unigram, EXP watermark algorithms"
             )
             
             n_gram = gr.Number(
-                label="N-gram 值",
+                label="N-gram value",
                 value=2,
                 minimum=1,
                 maximum=5,
                 visible=False
             )
             
-            # Python 命令顯示
+            # Python command display
             python_command = gr.Textbox(
-                label="Python 命令",
+                label="Python command",
                 lines=4,
                 max_lines=6,
                 value="python3 script/paraphraser1.py --algorithm KGW",
-                info="可以複製到終端執行",
+                info="Can be copied to terminal to execute",
                 show_copy_button=True
             )
             
-            run_btn = gr.Button("執行實驗", variant="primary", size="lg")
+            run_btn = gr.Button("Run experiment", variant="primary", size="lg")
         
         with gr.Column(scale=2):
-            gr.Markdown("## 執行結果")
+            gr.Markdown("## Execution results")
             
             output_text = gr.Textbox(
-                label="執行輸出",
+                label="Execution output",
                 lines=15,
                 max_lines=20,
                 show_copy_button=True
             )
             
             params_text = gr.Code(
-                label="實驗參數",
+                label="Experiment parameters",
                 language="json"
             )
 
-            # GPU 使用量顯示
+            # GPU usage display
             with gr.Row():
                 gpu_info_text = gr.Textbox(
-                    label="GPU 使用量 (自動更新)",
+                    label="GPU usage (auto-update)",
                     lines=1,
                     value=get_gpu_info(),
                     interactive=False,
@@ -418,15 +418,15 @@ with gr.Blocks(title="水印實驗系統", theme=gr.themes.Soft()) as demo:
                 )
                 
                 refresh_gpu_btn = gr.Button(
-                    "🔄 刷新",
+                    "🔄 Refresh",
                     size="sm",
                     scale=1
                 )
             
-            # 隱藏的定時器組件
+            # Hidden timer component
             timer_state = gr.State(value=0)
     
-    # 所有可能影響輸出路徑和命令的組件
+    # All components that may affect output path and command
     update_inputs = [
         experiment_type, algorithm, model_name, dataset_path, max_samples,
         watermarked_texts_path, generation_mode, delta, temperature,
@@ -438,7 +438,7 @@ with gr.Blocks(title="水印實驗系統", theme=gr.themes.Soft()) as demo:
         generation_mode, output_dir, python_command
     ]
     
-    # 事件處理 - 動態更新
+    # Event handling - dynamic update
     for component in [experiment_type, algorithm, model_name, dataset_path, max_samples, 
                      delta, temperature, attack_type, use_winmax, n_gram]:
         component.change(
@@ -447,39 +447,39 @@ with gr.Blocks(title="水印實驗系統", theme=gr.themes.Soft()) as demo:
             outputs=update_outputs
         )
     
-    # 頁面載入時初始化
+    # Initialize when page loads
     demo.load(
         fn=update_interface_and_paths,
         inputs=update_inputs,
         outputs=update_outputs
     )
     
-    # GPU 資訊刷新按鈕
+    # GPU info refresh button
     refresh_gpu_btn.click(
         fn=update_gpu_info,
         outputs=gpu_info_text
     )
     
-    # 使用更現代的方法實現自動刷新
+    # Use more modern method to implement auto-refresh
     if hasattr(gr, 'Timer'):
-        # 如果Gradio支持Timer組件
-        timer = gr.Timer(value=3)  # 每3秒觸發
+        # If Gradio supports Timer component
+        timer = gr.Timer(value=3)  # Trigger every 3 seconds
         timer.tick(
             fn=update_gpu_info,
             outputs=gpu_info_text
         )
     else:
-        # 後備方案：使用JavaScript定時器
+        # Backup: use JavaScript timer
         demo.load(
             fn=None,
             js="""
             function() {
                 console.log('Setting up GPU info auto-refresh...');
                 setInterval(function() {
-                    // 查找刷新按鈕
+                    // Find refresh button
                     const buttons = document.querySelectorAll('button');
                     for (let btn of buttons) {
-                        if (btn.textContent.includes('🔄') || btn.textContent.includes('刷新')) {
+                        if (btn.textContent.includes('🔄') || btn.textContent.includes('Refresh')) {
                             btn.click();
                             break;
                         }

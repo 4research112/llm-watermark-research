@@ -889,11 +889,11 @@ class SignatureAwareWatermarkDetectionPipeline_V2(WatermarkedTextDetectionPipeli
                 prompts.append(prompt)
                 
                 if self.show_progress:
-                    print(f"檢測結果: {detection_results}")
+                    print(f"Detection results: {detection_results}")
                     print("-" * 60)
                     
             except Exception as e:
-                logging.error(f"處理文本 {index} 時出錯: {str(e)}")
+                logging.error(f"Error processing text {index}: {str(e)}")
                 continue
         print("========= watermarked signature detection end ==========")
         # Save processed texts
