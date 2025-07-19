@@ -35,6 +35,25 @@ conda activate myenv
 pip install -r requirements.txt
 ```
 
+3. **Configure Python Path**
+
+If you don't have `direnv` installed, manually set the PYTHONPATH to include the project root directory:
+
+```bash
+# Add the project root to PYTHONPATH (replace with your actual project path)
+export PYTHONPATH="${PYTHONPATH}:/path/to/your/llm-watermark-signature"
+
+# For the current session, you can also run:
+export PYTHONPATH="${PYTHONPATH}:$(pwd)"
+
+# To make it permanent, add this line to your shell profile (.bashrc, .zshrc, etc.):
+echo 'export PYTHONPATH="${PYTHONPATH}:/path/to/your/llm-watermark-signature"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**Why this is needed:** This ensures Python can properly import modules from the project directory structure when running the scripts.
+
+
 ## Quick Start - Reproduce Experimental Results
 
 ### Run All Experiments
@@ -204,8 +223,8 @@ The interface will be available at `http://localhost:7860`
 
 **Experiment Configuration:**
 - Select watermarking algorithms (KGW, SWEET, Unigram, EXP)
-- Choose models (Llama-3.1, OPT-1.3b, TAIDE)
-- Configure datasets (C4, ZHTW, HumanEval, MBPP)
+- Choose models (Llama-3.1, OPT-1.3b)
+- Configure datasets (C4, MBPP)
 - Adjust parameters (delta, temperature, sample count)
 
 **Advanced Options:**
