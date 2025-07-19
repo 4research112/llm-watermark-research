@@ -219,47 +219,6 @@ class GPTParaphraser(TextEditor):
         paraphrased_text = openai_util.get_result(self.prompt + text)
         return paraphrased_text
 
-class TaideParaphraser(TextEditor):
-    """使用 TAIDE 模型進行文本改寫的類。"""
-
-    def __init__(self, tokenizer, model, transformers_config, prompt: str = "請重寫以下文字，保持原意但使用不同表達方式："):
-        """
-        初始化 TAIDE 文本改寫器。
-
-        參數:
-            tokenizer: TAIDE 模型的 tokenizer
-            model: TAIDE 模型
-            prompt (str): 用於改寫文本的提示詞
-        """
-        self.tokenizer = tokenizer
-        self.model = model.eval()
-        self.device = transformers_config.device
-        self.gen_kwargs = transformers_config.gen_kwargs
-        self.prompt = prompt
-
-    def edit(self, text: str, reference=None):
-        """
-        使用 TAIDE 模型改寫文本。
-
-        參數:
-            text (str): 需要改寫的文本
-            reference (str, optional): 參考文本，默認為 None
-
-        返回:
-            str: 改寫後的文本
-        """
-        self.gen_kwargs['temperature'] = 0.2
-        final_input_text = f"{self.prompt}\n{text}"
-        encoded_prompt = self.tokenizer(final_input_text, return_tensors="pt", add_special_tokens=True).to(self.device)
-        # Generate unwatermarked text
-        encoded_unwatermarked_text = self.model.generate(**encoded_prompt, **self.gen_kwargs)
-        # Isolate newly generated tokens by excluding the prompt tokens
-        new_tokens = encoded_unwatermarked_text[:, encoded_prompt["input_ids"].shape[-1]:]
-        # Decode
-        paraphrased_text = self.tokenizer.batch_decode(new_tokens, skip_special_tokens=True)[0]
-            
-        return paraphrased_text
-
 class DipperParaphraser(TextEditor):
     """Paraphrase a text using the DIPPER model."""
 
@@ -627,7 +586,7 @@ class CopyPasteAttack(TextEditor):
         # Randomly select the starting position of the source text
         src_start = random.randint(0, len(src_tokens) - actual_insertion_len)
         
-        # Execute insertion: dst前部 + src片段 + dst後部
+        # Execute insertion: dst prefix + src fragment + dst suffix
         result = torch.cat([
             dst_tokens[:insertion_pos],
             src_tokens[src_start:src_start + actual_insertion_len],
@@ -638,72 +597,72 @@ class CopyPasteAttack(TextEditor):
 
     def _k_insertion_t_len(self, k: int, t: int, min_token_count: int,
                           dst_tokens, src_tokens):
-        """執行 k 次長度為 t 的「定點位置對應替換」攻擊。"""
+        """Execute k times of "fixed-position substitution" attack with length t."""
         
-        # 確保文本長度足夠進行攻擊
+        # Ensure text length is enough for attack
         if min_token_count < t * k:
             return dst_tokens.clone()
 
         while True:
-            # 直接在有效的範圍內生成隨機起始點，確保片段不會超出邊界
+            # Generate random starting points directly in the valid range, ensuring the fragment does not exceed the boundary
             try:
                 rand_insert_locs = torch.randperm(min_token_count - t)[:k]
             except RuntimeError:
-                # 如果可選的起始點數量小於 k，則無法攻擊
+                # If the number of available starting points is less than k, cannot attack
                 return dst_tokens.clone()
             
-            # 排序位置，方便檢查重疊
+            # Sort positions for checking overlap
             sorted_locs, _ = torch.sort(rand_insert_locs)
             
-            # 檢查重疊條件
+            # Check overlap condition
             overlap = False
             for i in range(len(sorted_locs) - 1):
                 if sorted_locs[i] + t > sorted_locs[i+1]:
                     overlap = True
                     break
             
-            # 如果沒有重疊，則找到了有效的位置組合
+            # If no overlap, found valid position combination
             if not overlap:
                 break
         
-        # 執行替換操作
+        # Execute replacement operation
         result_tokens = dst_tokens.clone()
         
         for loc in sorted_locs:
             start_idx = loc.item()
             end_idx = start_idx + t
             
-            # 核心邏輯：用源文本的對應位置替換目標文本
+            # Core logic: replace target text with corresponding positions of source text
             result_tokens[start_idx:end_idx] = src_tokens[start_idx:end_idx]
         
         return result_tokens
 
     def edit(self, text: str, reference: str = None):
         """
-        執行 Copy-Paste 攻擊。
+        Execute Copy-Paste attack.
 
-        參數:
-            text (str): 目標文本
-            reference (str): 源文本
+        Parameters:
+            text (str): target text
+            reference (str): source text
 
-        返回:
-            str: 攻擊後的文本
+        Returns:
+            str: attacked text
         """
         if reference is None:
             return text
         
-        # Tokenize 兩個文本
+        # Tokenize two texts
         dst_tokens = self._tokenize_text(reference)
         src_tokens = self._tokenize_text(text)
         
-        # 檢查長度條件
+        # Check length condition
         if self.min_length > 0:
             if len(dst_tokens) < self.min_length or len(src_tokens) < self.min_length:
                 return ""
         
         min_token_count = min(len(dst_tokens), len(src_tokens))
         
-        # 根據攻擊類型執行不同的攻擊
+        # Execute different attacks based on attack type
         if self.attack_type == "single-single":
             attacked_tokens = self._single_insertion(
                 self.insertion_length, min_token_count, dst_tokens, src_tokens
@@ -714,16 +673,16 @@ class CopyPasteAttack(TextEditor):
                 min_token_count, dst_tokens, src_tokens
             )
         else:
-            raise ValueError(f"不支援的攻擊類型: {self.attack_type}")
+            raise ValueError(f"Unsupported attack type: {self.attack_type}")
         
-        # 將 tokens 轉換回文本
+        # Convert tokens back to text
         attacked_text = self.tokenizer.decode(attacked_tokens, skip_special_tokens=True)
         
         return attacked_text
 
 
 class PercentageCopyPasteAttack(CopyPasteAttack):
-    """支援小數比例形式的 Copy-Paste 攻擊。"""
+    """Support decimal ratio form of Copy-Paste attack."""
 
     def __init__(self, tokenizer, 
                  num_insertions: int = 3,
@@ -732,21 +691,21 @@ class PercentageCopyPasteAttack(CopyPasteAttack):
                  min_length: int = 0,
                  attack_type: str = "k-t") -> None:
         """
-        初始化支援小數比例的 Copy-Paste 攻擊。
+        Initialize support for decimal ratio form of Copy-Paste attack.
 
-        參數:
-            tokenizer: 用於 tokenization 的 tokenizer
-            num_insertions (int): 插入次數
-            insertion_ratio (float): 插入比例，如 0.25 表示 25%
-            max_new_tokens (int): 最大新 token 數，用於比例計算
-            min_length (int): 最小文本長度
-            attack_type (str): 攻擊類型
+        Parameters:
+            tokenizer: tokenizer for tokenization
+            num_insertions (int): number of insertions
+            insertion_ratio (float): insertion ratio, e.g. 0.25 means 25%
+            max_new_tokens (int): maximum new token number, used for ratio calculation
+            min_length (int): minimum text length
+            attack_type (str): attack type
         """
-        # 驗證比例值的合理性
+        # Validate ratio value
         if not 0.0 <= insertion_ratio <= 1.0:
-            raise ValueError(f"insertion_ratio 必須在 0.0 到 1.0 之間，當前值: {insertion_ratio}")
+            raise ValueError(f"insertion_ratio must be between 0.0 and 1.0, current value: {insertion_ratio}")
         
-        # 計算實際插入長度
+        # Calculate actual insertion length
         insertion_length = int(insertion_ratio * max_new_tokens) // num_insertions
         
         super().__init__(tokenizer, num_insertions, insertion_length, min_length, attack_type)
@@ -754,5 +713,5 @@ class PercentageCopyPasteAttack(CopyPasteAttack):
         self.insertion_ratio = insertion_ratio
         self.max_new_tokens = max_new_tokens
         
-        # 計算有效攻擊百分比（用於顯示）
+        # Calculate effective attack percentage (for display)
         self.effective_attack_percentage = (1 - insertion_ratio) * 100

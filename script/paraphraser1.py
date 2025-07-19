@@ -2,7 +2,7 @@ import argparse
 from dataclasses import dataclass, field
 from typing import Optional, List
 from translate import Translator
-from evaluation.dataset import C4Dataset, ZHTWC4Dataset, HumanEvalDataset, MBPPDataset
+from evaluation.dataset import C4Dataset, HumanEvalDataset, MBPPDataset
 from watermark.auto_watermark import AutoWatermark
 from utils.transformers_config import TransformersConfig
 from evaluation.tools.success_rate_calculator import DynamicThresholdSuccessRateCalculator, FundamentalSuccessRateCalculator
@@ -108,10 +108,7 @@ class DatasetConfig:
     
     def create_dataset(self):
         """Create corresponding dataset based on path"""
-        if 'zhtw' in self.path.lower():
-            print(f"Using ZHTWC4Dataset to load {self.path}")
-            return ZHTWC4Dataset(self.path, tokenizer=self.tokenizer, max_samples=self.max_samples)
-        elif 'c4' in self.path.lower():
+        if 'c4' in self.path.lower():
             print(f"Using C4Dataset to load {self.path}")
             return C4Dataset(self.path, max_samples=self.max_samples)
         elif 'human_eval' in self.path.lower():
